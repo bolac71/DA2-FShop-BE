@@ -1,10 +1,14 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { User } from './modules/users/entities/user.entity';
+import { getDatabaseConfig } from './configs/database.config';
 import { UsersModule } from './modules/users/users.module';
+import { APP_INTERCEPTOR, APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { AllExceptionFilter } from './filters/all-exception.filter';
+import { TransformInterceptor } from './interceptors/transform.interceptor';
+import { StartTimingMiddleware } from './middlewares/start-timing.middleware';
 
 @Module({
   imports: [
@@ -13,22 +17,37 @@ import { UsersModule } from './modules/users/users.module';
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres',
-        host: config.get('DATABASE_HOST') || 'localhost',
-        port: config.get('DATABASE_PORT') || 5432,
-        username: config.get('DATABASE_USER') || 'username',
-        password: config.get('DATABASE_PASSWORD') || '123456',
-        database: config.get('DATABASE_NAME') || 'fshop_db',
-        entities: [User],
-        migrations: ['dist/migrations/*.js'],
-        synchronize: false,
-        logging: config.get('NODE_ENV') === 'development',
-      }),
+      useFactory: getDatabaseConfig,
     }),
     UsersModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TransformInterceptor,
+    },
+    // xet global Interceptor
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionFilter,
+    },
+    // xet global Exception
+    {
+      provide: APP_PIPE,
+      useValue: new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    },
+  ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(StartTimingMiddleware)
+      .forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+}
