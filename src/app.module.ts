@@ -10,6 +10,8 @@ import { AllExceptionFilter } from './filters/all-exception.filter';
 import { TransformInterceptor } from './interceptors/transform.interceptor';
 import { StartTimingMiddleware } from './middlewares/start-timing.middleware';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
+import { RedisModule } from '@nestjs-modules/ioredis';
+import { getRedisConfig } from './configs/redis.config';
 
 @Module({
   imports: [
@@ -19,6 +21,10 @@ import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: getDatabaseConfig,
+    }),
+    RedisModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: getRedisConfig,
     }),
     UsersModule,
     CloudinaryModule,
@@ -50,6 +56,6 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(StartTimingMiddleware)
-      .forRoutes({ path: '*', method: RequestMethod.ALL });
+      .forRoutes({ path: '*path', method: RequestMethod.ALL });
   }
 }
