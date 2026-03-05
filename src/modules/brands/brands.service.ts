@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -18,7 +20,7 @@ export class BrandsService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
-    async create(createBrandDto: CreateBrandDto, file: Express.Multer.File) {
+  async create(createBrandDto: CreateBrandDto, file: Express.Multer.File) {
     return await this.dataSource.transaction(async (manager) => {
       const alreadyExist = await manager.findOne(Brand, {
         where: { name: createBrandDto.name },
@@ -77,17 +79,29 @@ export class BrandsService {
       });
       if (!brand)
         throw new HttpException('Brand not found', HttpStatus.NOT_FOUND);
-      Object.assign(brand, updateBrandDto); // merge
-      if (file) {
-        if (brand.publicId)
-          await this.cloudinaryService
-            .deleteFile(brand.publicId)
-            .catch(() => null);
-        const uploaded = await this.cloudinaryService.uploadFile(file);
-        brand.imageUrl = uploaded?.secure_url;
-        brand.publicId = uploaded?.public_id;
+      if (updateBrandDto.name && updateBrandDto.name !== brand.name) {
+        const existingName = await manager.findOne(Brand, {
+          where: { name: updateBrandDto.name },
+        });
+        if (existingName)
+          throw new HttpException('Brand name already exists', HttpStatus.CONFLICT);
       }
-      return await manager.save(brand);
+      manager.merge(Brand, brand, updateBrandDto);
+      let oldPublicId: string | null = null;
+      if (file) {
+          const uploaded = await this.cloudinaryService.uploadFile(file);
+          if (brand.publicId)
+            oldPublicId = brand.publicId;
+          brand.imageUrl = uploaded?.secure_url;
+          brand.publicId = uploaded?.public_id;
+        }
+        const savedBrand = await manager.save(brand);
+        if (oldPublicId) {
+          this.cloudinaryService.deleteFile(oldPublicId).catch((err) => {
+            console.error('Failed to delete old image on Cloudinary:', err);
+          });
+        }
+        return savedBrand;
     });
   }
 

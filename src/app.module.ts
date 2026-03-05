@@ -5,6 +5,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { getDatabaseConfig } from './configs/database.config';
 import { UsersModule } from './modules/users/users.module';
+import { BrandsModule } from './modules/brands/brands.module';
+import { CategoriesModule } from './modules/categories/categories.module';
 import { APP_INTERCEPTOR, APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { AllExceptionFilter } from './filters/all-exception.filter';
 import { TransformInterceptor } from './interceptors/transform.interceptor';
@@ -12,7 +14,6 @@ import { StartTimingMiddleware } from './middlewares/start-timing.middleware';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { getRedisConfig } from './configs/redis.config';
-import { BrandsModule } from './modules/brands/brands.module';
 
 @Module({
   imports: [
@@ -28,8 +29,9 @@ import { BrandsModule } from './modules/brands/brands.module';
       useFactory: getRedisConfig,
     }),
     UsersModule,
-    CloudinaryModule,
     BrandsModule,
+    CategoriesModule,
+    CloudinaryModule,
   ],
   controllers: [AppController],
   providers: [

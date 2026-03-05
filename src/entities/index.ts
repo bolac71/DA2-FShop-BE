@@ -5,3 +5,4 @@
 
 export { User } from '../modules/users/entities/user.entity';
 export { Brand } from '../modules/brands/entities/brand.entity';
+export { Category } from '../modules/categories/entities/category.entity';
