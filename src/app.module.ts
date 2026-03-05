@@ -12,6 +12,7 @@ import { StartTimingMiddleware } from './middlewares/start-timing.middleware';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { getRedisConfig } from './configs/redis.config';
+import { BrandsModule } from './modules/brands/brands.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { getRedisConfig } from './configs/redis.config';
     }),
     UsersModule,
     CloudinaryModule,
+    BrandsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,7 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { User } from '../modules/users/entities/user.entity';
 
+/**
+ * Database configuration factory
+ * Entities are auto-loaded from modules using @Module imports
+ * This follows NestJS best practices
+ */
 export const getDatabaseConfig = (
   config: ConfigService,
 ): TypeOrmModuleOptions => ({
@@ -11,7 +15,7 @@ export const getDatabaseConfig = (
   username: config.get('DATABASE_USER') || 'username',
   password: config.get('DATABASE_PASSWORD') || '123456',
   database: config.get('DATABASE_NAME') || 'fshop_db',
-  entities: [User],
+  autoLoadEntities: true, // Entities loaded from modules
   migrations: ['dist/migrations/*.js'],
   synchronize: false,
   logging: config.get('NODE_ENV') === 'development',

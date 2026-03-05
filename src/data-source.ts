@@ -1,8 +1,12 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { User } from './modules/users/entities/user.entity';
 import * as dotenv from 'dotenv';
+import { User, Brand } from './entities';
 
+/**
+ * TypeORM CLI DataSource configuration
+ * Used for migration commands and database operations outside of NestJS app context
+ */
 dotenv.config();
 
 export const AppDataSource = new DataSource({
@@ -12,7 +16,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DATABASE_USER || 'username',
   password: process.env.DATABASE_PASSWORD || '123456',
   database: process.env.DATABASE_NAME || 'fshop_db',
-  entities: [User],
+  entities: [User, Brand],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
 });
