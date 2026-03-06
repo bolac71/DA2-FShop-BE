@@ -15,6 +15,7 @@ import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { getRedisConfig } from './configs/redis.config';
 import { ColorsModule } from './modules/colors/colors.module';
+import { SizesModule } from './modules/sizes/sizes.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ColorsModule } from './modules/colors/colors.module';
     CategoriesModule,
     CloudinaryModule,
     ColorsModule,
+    SizesModule,
   ],
   controllers: [AppController],
   providers: [
