@@ -1,0 +1,6 @@
+export enum SizeType {
+  CLOTHING = 'CLOTHING',
+  FOOTWEAR = 'FOOTWEAR',
+  ACCESSORY = 'ACCESSORY',
+  FREESIZE = 'FREESIZE',
+}

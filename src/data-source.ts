@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
-import { User, Brand, Category, Color } from './entities';
+import { User, Brand, Category, Color, Size } from './entities';
 
 /**
  * TypeORM CLI DataSource configuration
@@ -16,7 +16,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DATABASE_USER || 'username',
   password: process.env.DATABASE_PASSWORD || '123456',
   database: process.env.DATABASE_NAME || 'fshop_db',
-  entities: [User, Brand, Category, Color],
+  entities: [User, Brand, Category, Color, Size],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
 });
