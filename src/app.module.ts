@@ -17,6 +17,7 @@ import { getRedisConfig } from './configs/redis.config';
 import { ColorsModule } from './modules/colors/colors.module';
 import { SizeTypesModule } from './modules/size-types/size-types.module';
 import { SizesModule } from './modules/sizes/sizes.module';
+import { ProductsModule } from './modules/products/products.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { SizesModule } from './modules/sizes/sizes.module';
     ColorsModule,
     SizeTypesModule,
     SizesModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [

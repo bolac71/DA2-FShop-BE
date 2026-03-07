@@ -9,3 +9,6 @@ export { Category } from '../modules/categories/entities/category.entity';
 export { Color } from '../modules/colors/entities/color.entity';
 export { SizeType } from '../modules/size-types/entities/size-type.entity';
 export { Size } from '../modules/sizes/entities/size.entity';
+export { Product } from '../modules/products/entities/product.entity';
+export { ProductImage } from '../modules/products/entities/product-image.entity';
+export { ProductVariant } from '../modules/products/entities/product-variant.entity';
