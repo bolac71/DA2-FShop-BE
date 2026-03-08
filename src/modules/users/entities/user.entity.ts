@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Role } from '../../../constants/role.enum';
 import { Address } from 'src/modules/addresses/entities/address.entity';
+import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
 
 @Entity('users')
 export class User {
@@ -51,4 +52,7 @@ export class User {
 
   @OneToMany(() => Address, (address) => address.user, { cascade: ['soft-remove'] })
   addresses: Address[];
+
+  @OneToMany(() => Wishlist, (wishlist) => wishlist.user, { cascade: true })
+  wishlists: Wishlist[];
 }
