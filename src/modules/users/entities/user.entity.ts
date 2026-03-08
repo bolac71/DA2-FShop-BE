@@ -6,10 +6,12 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { Role } from '../../../constants/role.enum';
 import { Address } from 'src/modules/addresses/entities/address.entity';
 import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
+import { Cart } from 'src/modules/carts/entities';
 
 @Entity('users')
 export class User {
@@ -55,4 +57,7 @@ export class User {
 
   @OneToMany(() => Wishlist, (wishlist) => wishlist.user, { cascade: true })
   wishlists: Wishlist[];
+
+  @OneToOne(() => Cart, (cart) => cart.user, { cascade: true })
+  cart: Cart;
 }

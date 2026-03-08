@@ -8,6 +8,7 @@ export interface JwtPayload {
   sub: number;
   email: string;
   role: Role;
+  cartId?: number;
   iat?: number;
   exp?: number;
 }

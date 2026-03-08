@@ -21,6 +21,7 @@ import { ProductsModule } from './modules/products/products.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
 import { WishlistsModule } from './modules/wishlists/wishlists.module';
+import { CartsModule } from './modules/carts/carts.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { WishlistsModule } from './modules/wishlists/wishlists.module';
     AuthModule,
     AddressesModule,
     WishlistsModule,
+    CartsModule,
   ],
   controllers: [AppController],
   providers: [

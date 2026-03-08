@@ -19,13 +19,13 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  private generateAccessToken(userId: number, email: string, role: Role): string {
-    return this.jwtService.sign({ sub: userId, email, role });
+  private generateAccessToken(userId: number, email: string, role: Role, cartId?: number): string {
+    return this.jwtService.sign({ sub: userId, email, role, ...(cartId && { cartId }) });
   }
 
-  private generateRefreshToken(userId: number, email: string, role: Role): string {
+  private generateRefreshToken(userId: number, email: string, role: Role, cartId?: number): string {
     return this.jwtService.sign(
-      { sub: userId, email, role },
+      { sub: userId, email, role, ...(cartId && { cartId }) },
       {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'default_refresh_secret'),
         expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION', '7d') as any,
@@ -53,8 +53,12 @@ export class AuthService {
       throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
     }
 
-    const accessToken = this.generateAccessToken(user.id, user.email, user.role);
-    const refreshToken = this.generateRefreshToken(user.id, user.email, user.role);
+    // Get user's cart
+    const userWithCart = await this.usersService.findByIdWithCart(user.id);
+    const cartId = userWithCart?.cart?.id;
+
+    const accessToken = this.generateAccessToken(user.id, user.email, user.role, cartId);
+    const refreshToken = this.generateRefreshToken(user.id, user.email, user.role, cartId);
 
     const refreshExpirySeconds = this.configService.get<number>('JWT_REFRESH_EXPIRATION_SECONDS', 604800);
     await this.redis.set(`refresh_token:${user.id}`, refreshToken, 'EX', refreshExpirySeconds);
@@ -65,7 +69,7 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     try {
-      const payload = this.jwtService.verify<{ sub: number; email: string; role: Role }>(
+      const payload = this.jwtService.verify<{ sub: number; email: string; role: Role; cartId?: number }>(
         refreshToken,
         { secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'default_refresh_secret') },
       );
@@ -80,8 +84,8 @@ export class AuthService {
         throw new HttpException('User is inactive', HttpStatus.FORBIDDEN);
       }
 
-      const newAccessToken = this.generateAccessToken(user.id, user.email, user.role);
-      const newRefreshToken = this.generateRefreshToken(user.id, user.email, user.role);
+      const newAccessToken = this.generateAccessToken(user.id, user.email, user.role, payload.cartId);
+      const newRefreshToken = this.generateRefreshToken(user.id, user.email, user.role, payload.cartId);
 
       const refreshExpirySeconds = this.configService.get<number>('JWT_REFRESH_EXPIRATION_SECONDS', 604800);
       await this.redis.set(`refresh_token:${user.id}`, newRefreshToken, 'EX', refreshExpirySeconds);
