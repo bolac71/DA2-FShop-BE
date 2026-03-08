@@ -19,6 +19,7 @@ import { SizeTypesModule } from './modules/size-types/size-types.module';
 import { SizesModule } from './modules/sizes/sizes.module';
 import { ProductsModule } from './modules/products/products.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { AuthModule } from './modules/auth/auth.module';
     SizesModule,
     ProductsModule,
     AuthModule,
+    AddressesModule,
   ],
   controllers: [AppController],
   providers: [
