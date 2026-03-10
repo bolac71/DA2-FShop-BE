@@ -41,7 +41,7 @@ export class AddressesController {
   @ApiOperation({ summary: 'Update address by ID' })
   @ApiNotFoundResponse({ description: 'Address not found' })
   update(@Req() req: Request, @Param('id') id: number, @Body() updateAddressDto: UpdateAddressDto) {
-    const {id: userId} = req['user'];
+    const userId = req['user']?.sub;
     return this.addressService.update(userId, id, updateAddressDto);
   }
 
@@ -51,8 +51,8 @@ export class AddressesController {
   @ApiOperation({ summary: 'Get address by ID' })
   @ApiNotFoundResponse({ description: 'Address not found' })
   getAddress(@Req() req: Request, @Param('addressId') addressId: number) {
-    const {id} = req['user'];
-    return this.addressService.getAddressById(id, addressId);
+    const userId = req['user']?.sub;
+    return this.addressService.getAddressById(userId, addressId);
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -62,7 +62,7 @@ export class AddressesController {
   @ApiResponse({ status: 200, description: 'Address set as default successfully' })
   @ApiNotFoundResponse({ description: 'Address not found' })
   setDefault(@Req() req: Request, @Param('id') id: number) {
-    const { id: userId } = req['user'];
+    const userId = req['user']?.sub;
     return this.addressService.setDefault(userId, id);
   }
 

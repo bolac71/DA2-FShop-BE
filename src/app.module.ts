@@ -22,6 +22,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
 import { WishlistsModule } from './modules/wishlists/wishlists.module';
 import { CartsModule } from './modules/carts/carts.module';
+import { InventoriesModule } from './modules/inventories/inventories.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { CartsModule } from './modules/carts/carts.module';
     AddressesModule,
     WishlistsModule,
     CartsModule,
+    InventoriesModule,
   ],
   controllers: [AppController],
   providers: [

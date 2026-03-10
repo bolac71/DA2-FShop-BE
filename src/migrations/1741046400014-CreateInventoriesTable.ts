@@ -1,10 +1,10 @@
 import { MigrationInterface, QueryRunner, Table, TableForeignKey, TableIndex } from 'typeorm';
 
-export class CreateCartsTable1741046400012 implements MigrationInterface {
+export class CreateInventoriesTable1741046400014 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.createTable(
       new Table({
-        name: 'carts',
+        name: 'inventories',
         columns: [
           {
             name: 'id',
@@ -14,10 +14,15 @@ export class CreateCartsTable1741046400012 implements MigrationInterface {
             generationStrategy: 'increment',
           },
           {
-            name: 'user_id',
+            name: 'variant_id',
             type: 'integer',
             isNullable: false,
-            isUnique: true,
+          },
+          {
+            name: 'quantity',
+            type: 'integer',
+            isNullable: false,
+            default: 0,
           },
           {
             name: 'created_at',
@@ -31,41 +36,39 @@ export class CreateCartsTable1741046400012 implements MigrationInterface {
             onUpdate: 'CURRENT_TIMESTAMP',
           },
         ],
+        uniques: [
+          {
+            name: 'UQ_inventories_variant_id',
+            columnNames: ['variant_id'],
+          },
+        ],
       }),
       true,
     );
 
-    // Add foreign key to users table (OneToOne)
+    // Add foreign key to product_variants table
     await queryRunner.createForeignKey(
-      'carts',
+      'inventories',
       new TableForeignKey({
-        columnNames: ['user_id'],
+        columnNames: ['variant_id'],
         referencedColumnNames: ['id'],
-        referencedTableName: 'users',
+        referencedTableName: 'product_variants',
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       }),
     );
 
-    // Add index for user_id (OneToOne, but still useful)
+    // Create index for variant lookup
     await queryRunner.createIndex(
-      'carts',
+      'inventories',
       new TableIndex({
-        name: 'IDX_carts_user_id',
-        columnNames: ['user_id'],
-        isUnique: true,
+        name: 'IDX_inventories_variant_id',
+        columnNames: ['variant_id'],
       }),
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Drop index
-    await queryRunner.dropIndex('carts', 'IDX_carts_user_id');
-
-    // Drop foreign key
-    await queryRunner.dropForeignKey('carts', 'FK_carts_user_id_users_id');
-
-    // Drop table
-    await queryRunner.dropTable('carts');
+    await queryRunner.dropTable('inventories');
   }
 }

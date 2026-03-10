@@ -22,7 +22,8 @@
     "migration:run": "npm run typeorm migration:run -- -d src/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs -d src/data-source.ts migration:revert",
     "migration:generate": "npm run typeorm migration:generate -- -d src/data-source.ts src/migrations/UpdateSchema",
-    "migration:create": "typeorm-ts-node-commonjs migration:create"
+    "migration:create": "typeorm-ts-node-commonjs migration:create",
+    "seed": "ts-node -r tsconfig-paths/register src/seeds/seed.ts"
   },
   "dependencies": {
     "@nestjs-modules/ioredis": "^2.0.2",

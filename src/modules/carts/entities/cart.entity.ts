@@ -18,19 +18,19 @@ export class Cart {
   id: number;
 
   @OneToOne(() => User, (user) => user.cart, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   @Exclude()
   user: User;
 
-  @Column()
+  @Column({ name: 'user_id', type: 'int', nullable: false })
   userId: number;
 
   @OneToMany(() => CartItem, (cartItem) => cartItem.cart)
   items: CartItem[];
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }
