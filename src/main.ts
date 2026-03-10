@@ -8,7 +8,7 @@ async function bootstrap() {
   // prefix API
   app.setGlobalPrefix('api/v1');
   app.enableCors({
-    origin: [process.env.FE_URL],
+    origin: true,
     credentials: true,
   });
   // swagger
