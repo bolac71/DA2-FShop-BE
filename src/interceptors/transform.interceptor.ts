@@ -13,12 +13,19 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ResponseDto<T
         const startTime = Number(request['startTime']);
         const endTime = Date.now();
         const takenTime = `${endTime - startTime}ms`;
-        return next.handle().pipe(map(data => (new ResponseDto(
-            response.statusCode,
-            "success",
-            takenTime,
-            request,
-            data as T
-        ))));
+        return next.handle().pipe(map(rawData => {
+            const isPaginated =
+                rawData !== null &&
+                typeof rawData === 'object' &&
+                'pagination' in rawData &&
+                'data' in rawData;
+
+            if (isPaginated) {
+                const { pagination, data } = rawData as { pagination: Record<string, any>; data: T };
+                return new ResponseDto(response.statusCode, 'success', takenTime, request, data, { pagination });
+            }
+
+            return new ResponseDto(response.statusCode, 'success', takenTime, request, rawData as T);
+        }));
     }
 }

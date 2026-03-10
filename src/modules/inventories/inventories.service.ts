@@ -86,13 +86,13 @@ export class InventoriesService {
   /**
    * Get all inventories (for admin/dashboard)
    */
-  async getAll(page?: number, limit?: number): Promise<{ data: Inventory[]; total: number }> {
+  async getAll(page?: number, limit?: number) {
     const [data, total] = await this.inventoryRepository.findAndCount({
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { createdAt: 'DESC' },
     });
 
-    return { data, total };
+    return { pagination: { total, page, limit }, data };
   }
 
   /**
@@ -177,7 +177,7 @@ export class InventoriesService {
       order: { createdAt: 'DESC' },
     });
 
-    return { data, total };
+    return { pagination: { total, page, limit }, data };
   }
 
   /**

@@ -12,6 +12,7 @@ import { Role } from '../../../constants/role.enum';
 import { Address } from 'src/modules/addresses/entities/address.entity';
 import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
 import { Cart } from 'src/modules/carts/entities';
+import { Order } from 'src/modules/orders/entities';
 
 @Entity('users')
 export class User {
@@ -60,4 +61,7 @@ export class User {
 
   @OneToOne(() => Cart, (cart) => cart.user, { cascade: true })
   cart: Cart;
+
+  @OneToMany(() => Order, order => order.user)
+  orders: Order[];
 }
