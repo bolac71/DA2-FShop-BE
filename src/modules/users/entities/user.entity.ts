@@ -1,11 +1,17 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
   Column,
   CreateDateColumn,
   Entity,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { Role } from '../../../constants/role.enum';
+import { Address } from 'src/modules/addresses/entities/address.entity';
+import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
+import { Cart } from 'src/modules/carts/entities';
 
 @Entity('users')
 export class User {
@@ -45,4 +51,13 @@ export class User {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
+
+  @OneToMany(() => Address, (address) => address.user, { cascade: ['soft-remove'] })
+  addresses: Address[];
+
+  @OneToMany(() => Wishlist, (wishlist) => wishlist.user, { cascade: true })
+  wishlists: Wishlist[];
+
+  @OneToOne(() => Cart, (cart) => cart.user, { cascade: true })
+  cart: Cart;
 }

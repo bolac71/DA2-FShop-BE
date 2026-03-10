@@ -56,7 +56,7 @@ export const PhoneNumberRequired = (name: string) =>
   applyDecorators(
     ApiProperty({
       required: true,
-      example: '+84-123-456-7890',
+      example: '0123456789',
       description: 'Phone number must be a valid number with country code.',
     }),
     IsString({ message: `${name} must be a string` }),

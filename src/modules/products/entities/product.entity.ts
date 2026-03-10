@@ -12,6 +12,7 @@ import { Brand } from '../../brands/entities/brand.entity';
 import { Category } from '../../categories/entities/category.entity';
 import { ProductImage } from './product-image.entity';
 import { ProductVariant } from './product-variant.entity';
+import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
 
 @Entity('products')
 export class Product {
@@ -53,4 +54,7 @@ export class Product {
 
   @OneToMany(() => ProductVariant, (variant) => variant.product, { cascade: true })
   variants?: ProductVariant[];
+
+  @OneToMany(() => Wishlist, (wishlist) => wishlist.product, { cascade: true })
+  wishlists?: Wishlist[];
 }

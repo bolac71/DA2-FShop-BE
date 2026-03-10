@@ -7,10 +7,12 @@ import {
   ManyToOne,
   JoinColumn,
   Unique,
+  OneToMany,
 } from 'typeorm';
 import { Product } from './product.entity';
 import { Color } from '../../colors/entities/color.entity';
 import { Size } from '../../sizes/entities/size.entity';
+import { CartItem } from 'src/modules/carts/entities';
 
 @Entity('product_variants')
 @Unique(['productId', 'colorId', 'sizeId'])
@@ -60,4 +62,7 @@ export class ProductVariant {
   @ManyToOne(() => Size)
   @JoinColumn({ name: 'size_id' })
   size?: Size;
+
+  @OneToMany(() => CartItem, (cartItem) => cartItem.variant)
+  cartItems: CartItem[];
 }

@@ -9,6 +9,7 @@ import { CreateUserDto } from './dtos/create-user.dto';
 import { hashPassword } from 'src/utils/hash';
 import { QueryDto } from 'src/dtos/query.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
+import { CartsService } from '../carts/carts.service';
 
 
 @Injectable()
@@ -17,6 +18,7 @@ export class UsersService {
     @InjectRepository(User) private usersRepository: Repository<User>,
     @InjectRedis() private readonly redis: Redis,
     private dataSource: DataSource,
+    private readonly cartService: CartsService,
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
@@ -47,21 +49,34 @@ export class UsersService {
       isActive: true,
     });
     await this.usersRepository.save(user);
+    await this.cartService.create({ userId: user.id });
     return user;
   }
 
   async findByEmail(email: string) {
     const user = await this.usersRepository.findOne({
       where: { email },
-      relations: ['cart'],
     });
     if (!user) throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
     return user;
   }
 
+  async updatePassword(id: number, hashedPassword: string) {
+    await this.usersRepository.update(id, { password: hashedPassword });
+  }
+
   async findById(id: number) {
     const user = await this.usersRepository.findOne({
       where: { id, isActive: true },
+    });
+    if (!user) throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
+    return user;
+  }
+
+  async findByIdWithCart(id: number) {
+    const user = await this.usersRepository.findOne({
+      where: { id, isActive: true },
+      relations: ['cart'],
     });
     if (!user) throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
     return user;
