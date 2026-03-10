@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Address, Cart, CartItem, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User } from 'src/entities';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { CreateOrderDto } from './dtos/create-order.dto';
 import { ShippingMethod } from 'src/constants/shipping-method.enum';
 import { OrderStatus } from 'src/constants/order-status.enum';
@@ -148,5 +148,67 @@ export class OrdersService {
     });
 
     return { pagination: { total, page, limit }, data };
+  }
+
+  async getAll(query: OrderQueryDto) {
+    const {
+      page,
+      limit,
+      search,
+      sortBy = 'id',
+      sortOrder,
+      status,
+    } = query;
+    const where: FindOptionsWhere<Order>[] = [];
+    if (search) {
+      where.push(
+        { note: Like(`%${search}%`), ...(status && { status }) },
+        { detailAddress: Like(`%${search}%`), ...(status && { status }) },
+      );
+    } else {
+      where.push({ ...(status && { status }) });
+    }
+    const [data, total] = await this.orderRepository.findAndCount({
+      where,
+      relations: ['items', 'items.variant', 'user'],
+      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
+      order: { [sortBy]: sortOrder },
+    });
+    const response = {
+      pagination: {
+        total,
+        page,
+        limit,
+      },
+      data,
+    };
+    console.log('data lay tu DB');
+    return response;
+  }
+
+  async getOne(id: number) {
+    const order = await this.orderRepository.findOne({
+      where: { id },
+      relations: [
+        'items',
+        'items.variant',
+        'items.variant.product',
+      ],
+    });
+    if (!order) throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
+    return order;
+  }
+
+  async getOneForUser(userId: number, orderId: number) {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId, user: { id: userId } },
+      relations: [
+        'items',
+        'items.variant',
+        'items.variant.product',
+      ],
+    });
+    if (!order) throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
+    return order;
   }
 }
