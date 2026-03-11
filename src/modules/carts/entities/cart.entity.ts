@@ -22,9 +22,6 @@ export class Cart {
   @Exclude()
   user: User;
 
-  @Column({ name: 'user_id', type: 'int', nullable: false })
-  userId: number;
-
   @OneToMany(() => CartItem, (cartItem) => cartItem.cart)
   items: CartItem[];
 

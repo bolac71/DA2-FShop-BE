@@ -14,16 +14,10 @@ export class Wishlist {
   @Exclude()
   user: User;
 
-  @Column()
-  userId: number;
-
   @ManyToOne(() => Product, (product) => product.wishlists, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'productId' })
   @Exclude()
   product: Product;
-
-  @Column()
-  productId: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

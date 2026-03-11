@@ -44,9 +44,6 @@ export class Address {
   @Exclude()
   user: User;
 
-  @Column()
-  userId: number;
-
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

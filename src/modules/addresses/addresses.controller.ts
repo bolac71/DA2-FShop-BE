@@ -16,8 +16,8 @@ export class AddressesController {
   @ApiCreatedResponse({description: 'Address created successfully'})
   @ApiNotFoundResponse({description: 'User not found'})
   create(@Req() req: Request, @Body() createAddressDto: CreateAddressDto) {
-    const {id} = req['user'];
-    return this.addressService.create(id, createAddressDto);
+    const {sub} = req['user'];
+    return this.addressService.create(sub, createAddressDto);
   }
 
   @ApiOperation({ summary: 'Get all addresses (admin)' })
@@ -31,8 +31,8 @@ export class AddressesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all addresses for the authenticated user' })
   getMyAddresses(@Req() req: Request) {
-    const {id} = req['user'];
-    return this.addressService.getMyAddresses(id);
+    const {sub} = req['user'];;
+    return this.addressService.getMyAddresses(sub);
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -41,8 +41,8 @@ export class AddressesController {
   @ApiOperation({ summary: 'Update address by ID' })
   @ApiNotFoundResponse({ description: 'Address not found' })
   update(@Req() req: Request, @Param('id') id: number, @Body() updateAddressDto: UpdateAddressDto) {
-    const userId = req['user']?.sub;
-    return this.addressService.update(userId, id, updateAddressDto);
+    const {sub} = req['user'];
+    return this.addressService.update(sub, id, updateAddressDto);
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -51,19 +51,19 @@ export class AddressesController {
   @ApiOperation({ summary: 'Get address by ID' })
   @ApiNotFoundResponse({ description: 'Address not found' })
   getAddress(@Req() req: Request, @Param('addressId') addressId: number) {
-    const userId = req['user']?.sub;
-    return this.addressService.getAddressById(userId, addressId);
+    const {sub} = req['user'];
+    return this.addressService.getAddressById(sub, addressId);
   }
 
   @UseGuards(AuthGuard('jwt'))
-  @Patch('/default/:id') 
+  @Patch('/default/:id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Set address as default' })
   @ApiResponse({ status: 200, description: 'Address set as default successfully' })
   @ApiNotFoundResponse({ description: 'Address not found' })
   setDefault(@Req() req: Request, @Param('id') id: number) {
-    const userId = req['user']?.sub;
-    return this.addressService.setDefault(userId, id);
+    const {sub} = req['user'];
+    return this.addressService.setDefault(sub, id);
   }
 
   @Delete(':id')

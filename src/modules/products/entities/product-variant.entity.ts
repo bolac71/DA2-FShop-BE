@@ -13,6 +13,7 @@ import { Product } from './product.entity';
 import { Color } from '../../colors/entities/color.entity';
 import { Size } from '../../sizes/entities/size.entity';
 import { CartItem } from 'src/modules/carts/entities';
+import { OrderItem } from 'src/modules/orders/entities';
 
 @Entity('product_variants')
 @Unique(['productId', 'colorId', 'sizeId'])
@@ -65,4 +66,7 @@ export class ProductVariant {
 
   @OneToMany(() => CartItem, (cartItem) => cartItem.variant)
   cartItems: CartItem[];
+
+  @OneToMany(() => OrderItem, orderItem => orderItem.variant)
+  orderItems: OrderItem[];
 }

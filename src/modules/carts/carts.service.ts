@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User, ProductVariant } from 'src/entities';
+import { User, ProductVariant, Inventory } from 'src/entities';
 import { Repository } from 'typeorm';
 import { CreateCartDto, CartItemDto } from './dtos';
 import { Cart, CartItem } from './entities';
@@ -12,6 +12,7 @@ export class CartsService {
     @InjectRepository(CartItem) private cartItemRepository: Repository<CartItem>,
     @InjectRepository(User) private userRepository: Repository<User>,
     @InjectRepository(ProductVariant) private productVariantRepository: Repository<ProductVariant>,
+    @InjectRepository(Inventory) private inventoryRepository: Repository<Inventory>,
   ) { }
 
   async create(createCartDto: CreateCartDto) {
@@ -27,10 +28,12 @@ export class CartsService {
     const { variantId, quantity } = cartItemDto;
     const cart = await this.cartRepository.findOne({ where: { id: cartId }, relations: ['items', 'items.variant'] });
     if (!cart) throw new HttpException('Cart not found', HttpStatus.NOT_FOUND);
+    const inventory = await this.inventoryRepository.findOne({ where: { variant: { id: variantId } } });
+    if (!inventory) throw new HttpException('Inventory not found for this variant', HttpStatus.NOT_FOUND);
 
     const variant = await this.productVariantRepository.findOne({ where: { id: variantId } });
     if (!variant) throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
-    // if (quantity > variant.remaining) throw new HttpException('Not enough quantity', HttpStatus.BAD_REQUEST);
+    if (quantity > inventory.quantity) throw new HttpException('Not enough quantity', HttpStatus.BAD_REQUEST);
 
     const existingCartItem = cart.items.find(item => item.variant.id === variantId);
     if (existingCartItem) {
