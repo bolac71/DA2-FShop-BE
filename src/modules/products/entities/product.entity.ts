@@ -31,6 +31,9 @@ export class Product {
   @Column({ name: 'category_id', type: 'int', nullable: false })
   categoryId: number;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
+  price: number;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 

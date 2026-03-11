@@ -33,7 +33,7 @@ export class ProductsService {
     productImages?: any[],
     variantImagesMap?: Record<number, { imageUrl: string; publicId: string }>,
   ) {
-    const { brandId, categoryId, variants } = createProductDto;
+    const { brandId, categoryId, price, variants } = createProductDto;
 
     // Validate Brand exists
     await this.brandsService.getById(brandId);
@@ -51,12 +51,13 @@ export class ProductsService {
 
     // Use transaction for atomic operation
     return await this.dataSource.transaction(async (manager) => {
-      // Create product
+      // Create product with price
       const product = manager.create(Product, {
         name: createProductDto.name,
         description: createProductDto.description,
         brandId,
         categoryId,
+        price,
       });
       const savedProduct = await manager.save(product);
 
@@ -112,7 +113,6 @@ export class ProductsService {
             sku: variant.sku,
             colorId: variant.colorId,
             sizeId: variant.sizeId,
-            price: variant.price,
             productId: savedProduct.id,
             ...(variantImagesMap?.[index] && {
               imageUrl: variantImagesMap[index].imageUrl,

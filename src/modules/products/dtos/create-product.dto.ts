@@ -21,10 +21,6 @@ export class CreateProductVariantDto {
   @NumberRequired('Size ID')
   @ApiProperty({ example: 1, description: 'Size ID' })
   sizeId: number;
-
-  @NumberRequired('Price')
-  @ApiProperty({ example: 99.99, description: 'Variant price' })
-  price: number;
 }
 
 export class CreateProductDto {
@@ -43,6 +39,10 @@ export class CreateProductDto {
   @NumberRequired('Category ID')
   @ApiProperty({ example: 1, description: 'Category ID' })
   categoryId: number;
+
+  @NumberRequired('Price')
+  @ApiProperty({ example: 99.99, description: 'Product price' })
+  price: number;
 
   @IsOptional()
   @ApiProperty({

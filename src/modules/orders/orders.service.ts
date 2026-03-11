@@ -77,6 +77,7 @@ export class OrdersService {
           relations: ['product'],
         })
         if (!variant) throw new HttpException(`Product variant with id ${item.variantId} not found`, HttpStatus.NOT_FOUND);
+        if (!variant.product) throw new HttpException(`Product not found for variant ${item.variantId}`, HttpStatus.NOT_FOUND);
 
         const inventory = await manager.findOne(Inventory, {
           where: { variant: { id: item.variantId } },
@@ -92,10 +93,10 @@ export class OrdersService {
           order,
           variant,
           quantity: item.quantity,
-          price: variant.price,
+          price: variant.product.price,
         });
         await manager.save(orderItem);
-        totalAmount += variant.price * item.quantity;
+        totalAmount += variant.product.price * item.quantity;
 
         inventory.quantity -= item.quantity;
         await manager.save(inventory);
