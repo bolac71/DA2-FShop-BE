@@ -10,7 +10,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
   app.enableCors({
-    origin: [process.env.FE_URL],
+    origin: true,
     credentials: true,
   });
   // swagger
