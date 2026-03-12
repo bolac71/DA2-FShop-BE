@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiOperation, ApiNotFoundResponse, ApiBadRequestResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
@@ -7,6 +8,8 @@ import { OrderQueryDto } from 'src/dtos';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Role } from 'src/constants';
 import { Roles } from 'src/decorators/roles.decorator';
+import { UpdateOrderStatusDto } from './dtos';
+import { ActorRole } from 'src/utils/order-status.rules';
 
 @Controller('orders')
 export class OrdersController {
@@ -60,6 +63,25 @@ export class OrdersController {
   getOrderByIdForUser(@Req() req: Request, @Param('orderId') orderId: number) {
     const { sub } = req['user'];
     return this.ordersService.getOneForUser(sub, orderId);
+  }
+
+  @Patch(':id/status')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update order status' })
+  @ApiNotFoundResponse({ description: 'Order not found' })
+  updateOrderStatus(
+    @Req() req: any,
+    @Param('id') id: number,
+    @Body() dto: UpdateOrderStatusDto,
+  ) {
+    const actor = {
+      id: req['user'].sub,
+      role: req['user'].role as ActorRole,
+      reason: dto['reason'],
+    };
+    return this.ordersService.updateStatus(id, dto.status, actor);
   }
 
 

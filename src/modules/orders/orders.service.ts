@@ -7,16 +7,20 @@ import { ShippingMethod } from 'src/constants/shipping-method.enum';
 import { OrderStatus } from 'src/constants/order-status.enum';
 import { InventoryType } from 'src/constants/inventory-type.enum';
 import { OrderQueryDto } from 'src/dtos';
+import { ActorRole, ensureTransitionAllowed } from 'src/utils/order-status.rules';
+import { InventoriesModule } from '../inventories/inventories.module';
+import { InventoriesService } from '../inventories/inventories.service';
 
 @Injectable()
 export class OrdersService {
   constructor(
     @InjectRepository(Order) private orderRepository: Repository<Order>,
-    @InjectRepository(OrderItem) 
+    @InjectRepository(OrderItem)
     private orderItemRepository: Repository<OrderItem>,
     @InjectRepository(ProductVariant)
     private readonly variantRepo: Repository<ProductVariant>,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly inventoriesService: InventoriesService,
   ) {}
 
   private calculateShippingFee(shippingMethod: ShippingMethod): number {
@@ -210,5 +214,72 @@ export class OrdersService {
     });
     if (!order) throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
     return order;
+  }
+
+  async updateStatus(orderId: number, next: OrderStatus, actor: {id: number, role: ActorRole, reason?: string}) {
+    return this.dataSource.manager.transaction(async (manager) => {
+      const order = await manager.findOne(Order, {
+        where: { id: orderId},
+        relations: ['items', 'items.variant', 'user'],
+      })
+      if (!order) throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
+
+      try {
+        ensureTransitionAllowed(order.status, next, actor.role);
+      }
+      catch (e) {
+        throw new HttpException(String(e), HttpStatus.BAD_REQUEST);
+      }
+
+      // Handle CANCELED status - restore stock and remove coupon redemption
+      if (next === OrderStatus.CANCELED || next === OrderStatus.REFUNDED) {
+        const inventoryItems: {variant: ProductVariant; quantity: number}[] = [];
+        
+        for (const it of order.items) {
+          const variant = await manager
+          .createQueryBuilder(ProductVariant, 'variant')
+          .innerJoinAndSelect('variant.product', 'product')
+          .where('variant.id = :id', { id: it.variant.id })
+          .setLock('pessimistic_write')
+          .getOne();
+
+          if (!variant) throw new HttpException('Product variant not found', HttpStatus.NOT_FOUND);
+          
+          const inventory = await manager.findOne(Inventory, {
+            where: { variant: { id: it.variant.id } },
+          })
+          if (!inventory) throw new HttpException(`Inventory not found for variant ${it.variant.id}`, HttpStatus.NOT_FOUND);
+
+          inventory.quantity += it.quantity;
+          await manager.save(inventory);
+          inventoryItems.push({variant, quantity: it.quantity});
+        }
+
+        if (inventoryItems.length > 0) {
+          const reasonNote =
+            next === OrderStatus.CANCELED
+              ? `Return products for shop for order #${order.id}`
+              : `Return products for order #${order.id}`;
+
+            for (const item of inventoryItems) {
+              await this.inventoriesService.createTransaction(
+                actor.id,
+                {
+                  variantId: item.variant.id,
+                  type: InventoryType.RETURN,
+                  quantity: item.quantity,
+                  note: reasonNote,
+                },
+              );
+            }
+        }
+      }
+
+      const prev = order.status;
+      order.status = next;
+      await manager.save(order);
+
+      return { message: 'Order status updated', from: prev, to: next };
+    })
   }
 }
