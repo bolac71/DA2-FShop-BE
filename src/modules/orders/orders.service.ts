@@ -42,6 +42,7 @@ export class OrdersService {
       // Validate user and address
       const user = await manager.findOne(User, { where: { id: userId } });
       if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+      console.log(addressId)
       const address = await manager.findOne(Address, { where: { id: addressId, user: { id: userId } } });
       if (!address) throw new HttpException('Address not found', HttpStatus.NOT_FOUND);
 
@@ -263,15 +264,14 @@ export class OrdersService {
               : `Return products for order #${order.id}`;
 
             for (const item of inventoryItems) {
-              await this.inventoriesService.createTransaction(
-                actor.id,
-                {
-                  variantId: item.variant.id,
-                  type: InventoryType.RETURN,
-                  quantity: item.quantity,
-                  note: reasonNote,
-                },
-              );
+              const inventoryTransaction = manager.create(InventoryTransaction, {
+                variantId: item.variant.id,
+                userId: actor.id,
+                type: InventoryType.RETURN,
+                quantity: item.quantity,
+                note: reasonNote,
+              });
+              await manager.save(inventoryTransaction);
             }
         }
       }
@@ -282,5 +282,49 @@ export class OrdersService {
 
       return { message: 'Order status updated', from: prev, to: next };
     })
+  }
+
+  async ensureOrderOwnership(orderId: number, userId: number) {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: ['user'],
+    });
+
+    if (!order) {
+      throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (order.user.id !== userId) {
+      throw new HttpException(
+        'Forbidden: You can only cancel your own orders',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+  }
+
+  async userConfirmDelivery(orderId: number, userId: number) {
+    return this.dataSource.transaction(async (manager) => {
+      const order = await manager.findOne(Order, {
+        where: { id: orderId },
+        relations: ['user'],
+      });
+
+      if (!order)
+        throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
+      if (order.user.id !== userId)
+        throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+
+      if (order.status !== OrderStatus.SHIPPED) {
+        throw new HttpException(
+          'Order must be in SHIPPING status to confirm',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Update trạng thái
+      order.status = OrderStatus.DELIVERED;
+      order.updatedAt = new Date();
+      await manager.save(order);
+    });
   }
 }
