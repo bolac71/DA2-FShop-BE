@@ -30,9 +30,6 @@ export class ProductVariant {
   @Column({ type: 'varchar', nullable: true })
   sku?: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
-  price: number;
-
   @Column({ name: 'product_id', type: 'int', nullable: false })
   productId: number;
 
