@@ -1,4 +1,4 @@
-import { IsEnum, Min, IsDateString, IsOptional, Max } from "class-validator";
+import { IsEnum, Min, IsOptional, Max } from "class-validator";
 import { CouponStatus, CouponType } from "src/constants";
 import { StringRequired, StringOptional, NumberOptional, NumberRequired, BooleanOptional } from "src/decorators/dto.decorator";
 import { ApiProperty } from "@nestjs/swagger";
@@ -45,12 +45,12 @@ export class CreateCouponDto {
   @ApiProperty({ required: false, description: 'Applicable product ID (if scope is product)' })
   applicableProduct?: number;
 
-  @IsDateString({}, { message: 'startDate must be a valid ISO 8601 date string' })
-  @ApiProperty({ example: '2024-06-01T00:00:00Z', description: 'Coupon start date (ISO 8601)' })
+  @StringRequired('startDate')
+  @ApiProperty({ example: '2026-06-01', description: 'Coupon start date (any date format accepted)' })
   startDate: string;
 
-  @IsDateString({}, { message: 'endDate must be a valid ISO 8601 date string' })
-  @ApiProperty({ example: '2024-08-31T23:59:59Z', description: 'Coupon end date (ISO 8601)' })
+  @StringRequired('endDate')
+  @ApiProperty({ example: '2026-08-31', description: 'Coupon end date (any date format accepted)' })
   endDate: string;
 
   @IsOptional()

@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Coupon, CouponRedemption } from './entities';
-import { CreateCouponDto } from './dtos';
+import { CreateCouponDto, UpdateCouponDto } from './dtos';
 import { CouponStatus, CouponType } from 'src/constants';
 import { QueryCouponDto } from './dtos/query-coupon.dto';
 
@@ -105,5 +107,91 @@ export class CouponsService {
       throw new HttpException('Coupon not found', HttpStatus.NOT_FOUND);
     }
     return coupon;
+  }
+  
+  async update(id: number, updateCouponDto: UpdateCouponDto) {
+    return await this.dataSource.transaction(async (manager) => {
+      // 1. Find coupon
+      const coupon = await manager.findOne(Coupon, { where: { id } });
+      if (!coupon) {
+        throw new HttpException('Coupon not found', HttpStatus.NOT_FOUND);
+      }
+
+      // 2. If updating code, check uniqueness (exclude current coupon)
+      if (updateCouponDto.code && updateCouponDto.code !== coupon.code) {
+        const existing = await manager.findOne(Coupon, {
+          where: { code: updateCouponDto.code },
+        });
+        if (existing) {
+          throw new HttpException(
+            'Coupon code already exists',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
+      // 3. Validate dates if provided
+      let startDate = coupon.startDate;
+      let endDate = coupon.endDate;
+
+      if (updateCouponDto.startDate || updateCouponDto.endDate) {
+        if (updateCouponDto.startDate)
+          startDate = new Date(updateCouponDto.startDate);
+        if (updateCouponDto.endDate)
+          endDate = new Date(updateCouponDto.endDate);
+
+        if (startDate >= endDate) {
+          throw new HttpException(
+            'startDate must be before endDate',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
+      // 4. Validate business logic
+      if (updateCouponDto.value !== undefined && updateCouponDto.value <= 0) {
+        throw new HttpException(
+          'Discount value must be greater than 0',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // For PERCENT type validation
+      const type = updateCouponDto.type ?? coupon.type;
+      const maxDiscountAmount =
+        updateCouponDto.maxDiscountAmount ?? coupon.maxDiscountAmount;
+
+      if (type === CouponType.PERCENT && maxDiscountAmount <= 0) {
+        throw new HttpException(
+          'maxDiscountAmount is required and must be > 0 for percent type coupons',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 5. Update coupon
+      this.couponRepository.merge(coupon, {
+        ...updateCouponDto,
+        startDate,
+        endDate,
+      });
+
+      // 5. Lưu xuống DB
+      return await this.couponRepository.save(coupon);
+    });
+  }
+
+
+  async delete(id: number) {
+    const coupon = await this.couponRepository.findOne({ where: { id } });
+    if (!coupon) throw new HttpException('Coupon not found', HttpStatus.NOT_FOUND);
+
+    coupon.isActive = true;
+    await this.couponRepository.save(coupon);
+
+    return {
+      deleted: true,
+      id,
+      message: 'Coupon deleted successfully.',
+    };
   }
 }
