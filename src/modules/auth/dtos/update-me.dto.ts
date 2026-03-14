@@ -1,13 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString } from 'class-validator';
+import { IsEmpty, IsOptional, IsString } from 'class-validator';
 import { StringOptional } from 'src/decorators/dto.decorator';
 
 export class UpdateMeDto {
   @StringOptional()
   fullName?: string;
 
-  @StringOptional()
-  @IsEmail()
+  @IsEmpty({ message: 'Email cannot be updated via this endpoint' })
   email?: string;
 
   @IsOptional()

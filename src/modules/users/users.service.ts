@@ -14,7 +14,6 @@ import { CartsService } from '../carts/carts.service';
 
 type UpdateOwnProfileInput = {
   fullName?: string;
-  email?: string;
 };
 
 @Injectable()
@@ -151,20 +150,8 @@ export class UsersService {
     if (!existingUser)
       throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
 
-    if (updateProfileDto.email) {
-      const existingEmail = await this.usersRepository.findOne({
-        where: { email: updateProfileDto.email },
-      });
-      if (existingEmail && existingEmail.id !== id)
-        throw new HttpException('Email exists', HttpStatus.CONFLICT);
-    }
-
     if (typeof updateProfileDto.fullName !== 'undefined') {
       existingUser.fullName = updateProfileDto.fullName;
-    }
-
-    if (typeof updateProfileDto.email !== 'undefined') {
-      existingUser.email = updateProfileDto.email;
     }
 
     if (file) {
