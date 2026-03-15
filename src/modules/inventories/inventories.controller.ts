@@ -30,6 +30,7 @@ import {
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/constants/role.enum';
 import { RolesGuard } from 'src/guards/roles.guard';
+import { QueryDto } from 'src/dtos';
 
 @ApiTags('Inventories')
 @Controller('inventories')
@@ -60,8 +61,8 @@ export class InventoriesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all inventories (admin only)' })
   @ApiResponse({ status: 200, description: 'List of inventories' })
-  findAll(@Query('page') page?: number, @Query('limit') limit?: number) {
-    return this.inventoriesService.getAll(page, limit);
+  findAll(@Query() query: QueryDto) {
+    return this.inventoriesService.getAll(query);
   }
 
   /**

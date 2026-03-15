@@ -4,6 +4,7 @@ import { ShippingMethod } from "src/constants/shipping-method.enum";
 import { User } from "src/entities";
 import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 import { OrderItem } from ".";
+import { Review } from "src/modules/reviews/entities/review.entity";
 
 @Entity('orders')
 export class Order {
@@ -52,6 +53,9 @@ export class Order {
 
   @OneToMany(() => OrderItem, (orderItem) => orderItem.order)
   items: OrderItem[];
+
+  @OneToMany(() => Review, (review) => review.order)
+  reviews: Review[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

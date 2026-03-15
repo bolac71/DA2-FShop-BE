@@ -34,6 +34,12 @@ export class Product {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: false })
   price: number;
 
+  @Column({ type: 'decimal', precision: 2, scale: 1, default: 0, name: 'average_rating' })
+  averageRating: number;
+
+  @Column({ type: 'int', default: 0, name: 'review_count' })
+  reviewCount: number;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 

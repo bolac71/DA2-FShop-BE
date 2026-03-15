@@ -13,6 +13,8 @@ import { Address } from 'src/modules/addresses/entities/address.entity';
 import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
 import { Cart } from 'src/modules/carts/entities';
 import { Order } from 'src/modules/orders/entities';
+import { ReviewVote } from 'src/modules/reviews/entities/review-vote.entity';
+import { Review } from 'src/modules/reviews/entities/review.entity';
 
 @Entity('users')
 export class User {
@@ -64,4 +66,10 @@ export class User {
 
   @OneToMany(() => Order, order => order.user)
   orders: Order[];
+
+  @OneToMany(() => Review, review => review.user)
+  reviews: Review[];
+
+  @OneToMany(() => ReviewVote, (vote) => vote.user)
+  reviewVotes: ReviewVote[];
 }

@@ -10,6 +10,7 @@ import {
 import { ProductVariant } from '../products/entities/product-variant.entity';
 import { InventoryType } from '../../constants/inventory-type.enum';
 import { User } from 'src/entities';
+import { QueryDto } from 'src/dtos';
 
 @Injectable()
 export class InventoriesService {
@@ -86,13 +87,25 @@ export class InventoriesService {
   /**
    * Get all inventories (for admin/dashboard)
    */
-  async getAll(page?: number, limit?: number) {
-    const [data, total] = await this.inventoryRepository.findAndCount({
-      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { createdAt: 'DESC' },
-    });
+  async getAll(query: QueryDto) {
+    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
+        const [data, total] = await this.inventoryRepository.findAndCount({
+          relations: ['variant', 'transactions'],
+          ...(page && limit && { take: limit, skip: (page - 1) * limit }),
+          order: { [sortBy]: sortOrder },
+        });
+    
+        const response = {
+          pagination: {
+            total,
+            page,
+            limit,
+          },
+          data,
+        };
+        return response;
 
-    return { pagination: { total, page, limit }, data };
+    
   }
 
   /**

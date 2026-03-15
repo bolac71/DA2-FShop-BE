@@ -9,6 +9,7 @@ import {
   Unique,
   OneToMany,
 } from 'typeorm';
+import { Review } from 'src/modules/reviews/entities';
 import { Product } from './product.entity';
 import { Color } from '../../colors/entities/color.entity';
 import { Size } from '../../sizes/entities/size.entity';
@@ -66,4 +67,7 @@ export class ProductVariant {
 
   @OneToMany(() => OrderItem, orderItem => orderItem.variant)
   orderItems: OrderItem[];
+
+  @OneToMany(() => Review, review => review.variant)
+  reviews: Review[];
 }

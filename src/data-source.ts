@@ -1,7 +1,30 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
-import { User, Address, Wishlist, Cart, CartItem, Brand, Category, Color, SizeType, Size, Product, ProductImage, ProductVariant, Inventory, InventoryTransaction, Order, OrderItem, Coupon, CouponRedemption } from './entities';
+import {
+  User,
+  Address,
+  Wishlist,
+  Cart,
+  CartItem,
+  Brand,
+  Category,
+  Color,
+  SizeType,
+  Size,
+  Product,
+  ProductImage,
+  ProductVariant,
+  Inventory,
+  InventoryTransaction,
+  Order,
+  OrderItem,
+  Coupon,
+  CouponRedemption,
+  Review,
+  ReviewImage,
+  ReviewVote,
+} from './entities';
 
 /**
  * TypeORM CLI DataSource configuration
@@ -16,7 +39,30 @@ export const AppDataSource = new DataSource({
   username: process.env.DATABASE_USER || 'username',
   password: process.env.DATABASE_PASSWORD || '123456',
   database: process.env.DATABASE_NAME || 'fshop_db',
-  entities: [User, Address, Wishlist, Cart, CartItem, Brand, Category, Color, SizeType, Size, Product, ProductImage, ProductVariant, Inventory, InventoryTransaction, Order, OrderItem, Coupon, CouponRedemption],
+  entities: [
+    User,
+    Address,
+    Wishlist,
+    Cart,
+    CartItem,
+    Brand,
+    Category,
+    Color,
+    SizeType,
+    Size,
+    Product,
+    ProductImage,
+    ProductVariant,
+    Inventory,
+    InventoryTransaction,
+    Order,
+    OrderItem,
+    Coupon,
+    CouponRedemption,
+    Review,
+    ReviewImage,
+    ReviewVote,
+  ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
 });

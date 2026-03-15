@@ -19,3 +19,4 @@ export { ProductVariant } from '../modules/products/entities/product-variant.ent
 export { Inventory, InventoryTransaction } from '../modules/inventories/entities';
 export { Order, OrderItem } from '../modules/orders/entities';
 export { Coupon, CouponRedemption } from '../modules/coupons/entities';
+export { Review, ReviewImage, ReviewVote } from '../modules/reviews/entities';
