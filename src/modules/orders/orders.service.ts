@@ -1,9 +1,9 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { Address, Cart, CartItem, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User } from 'src/entities';
+import { Address, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User } from 'src/entities';
 import { DataSource, FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { CreateOrderDto } from './dtos/create-order.dto';
-import { ShippingMethod } from 'src/constants/shipping-method.enum';
+import { CouponStatus, CouponType, RedemptionStatus, ShippingMethod } from 'src/constants';
 import { OrderStatus } from 'src/constants/order-status.enum';
 import { InventoryType } from 'src/constants/inventory-type.enum';
 import { OrderQueryDto } from 'src/dtos';
@@ -21,7 +21,7 @@ export class OrdersService {
     private readonly variantRepo: Repository<ProductVariant>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly inventoriesService: InventoriesService,
-  ) {}
+  ) { }
 
   private calculateShippingFee(shippingMethod: ShippingMethod): number {
     switch (shippingMethod) {
@@ -34,10 +34,27 @@ export class OrdersService {
     }
   }
 
+  private calculateCouponDiscount(coupon: Coupon, subtotal: number, shippingFee: number) {
+    if (coupon.type === CouponType.SHIPPING) {
+      return shippingFee;
+    }
+
+    if (coupon.type === CouponType.FIXED) {
+      return Math.min(subtotal, Number(coupon.value));
+    }
+
+    const percentDiscount = (subtotal * Number(coupon.value)) / 100;
+    if (Number(coupon.maxDiscountAmount) > 0) {
+      return Math.min(percentDiscount, Number(coupon.maxDiscountAmount));
+    }
+
+    return percentDiscount;
+  }
+
   async create(userId: number, createOrderDto: CreateOrderDto) {
     return await this.dataSource.manager.transaction(async (manager) => {
       // Implementation for creating order within a transaction
-      const {addressId, note, shippingMethod, items} = createOrderDto;
+      const { addressId, couponId, note, shippingMethod, items } = createOrderDto;
 
       // Validate user and address
       const user = await manager.findOne(User, { where: { id: userId } });
@@ -73,12 +90,13 @@ export class OrdersService {
       await manager.save(order);
 
       // 5. Create order items and calculate total amount
-      let totalAmount = 0;
+      let subtotal = 0;
+      const orderedProductIds: number[] = [];
       const orderItems = [];
 
       for (const item of items) {
         const variant = await manager.findOne(ProductVariant, {
-          where: {id: item.variantId},
+          where: { id: item.variantId },
           relations: ['product'],
         })
         if (!variant) throw new HttpException(`Product variant with id ${item.variantId} not found`, HttpStatus.NOT_FOUND);
@@ -101,7 +119,8 @@ export class OrdersService {
           price: variant.product.price,
         });
         await manager.save(orderItem);
-        totalAmount += variant.product.price * item.quantity;
+        subtotal += Number(variant.product.price) * item.quantity;
+        orderedProductIds.push(variant.product.id);
 
         inventory.quantity -= item.quantity;
         await manager.save(inventory);
@@ -131,7 +150,61 @@ export class OrdersService {
         }
       }
 
-      order.totalAmount = totalAmount + shippingFee;
+      let discountAmount = 0;
+
+      if (couponId) {
+        const coupon = await manager.findOne(Coupon, { where: { id: couponId, isActive: true } });
+        if (!coupon) {
+          throw new HttpException('Coupon not found', HttpStatus.NOT_FOUND);
+        }
+
+        const now = new Date();
+        if (coupon.status !== CouponStatus.ACTIVE || now < new Date(coupon.startDate) || now > new Date(coupon.endDate)) {
+          throw new HttpException('Coupon is not active', HttpStatus.BAD_REQUEST);
+        }
+
+        if (Number(coupon.maxUses) > 0 && Number(coupon.usedCount) >= Number(coupon.maxUses)) {
+          throw new HttpException('Coupon has reached maximum uses', HttpStatus.BAD_REQUEST);
+        }
+
+        if (subtotal < Number(coupon.minOrderAmount)) {
+          throw new HttpException('Order does not meet coupon minimum amount', HttpStatus.BAD_REQUEST);
+        }
+
+        if (coupon.applicableProduct && !orderedProductIds.includes(coupon.applicableProduct)) {
+          throw new HttpException('Coupon is not applicable to selected products', HttpStatus.BAD_REQUEST);
+        }
+
+        if (Number(coupon.perUserLimit) > 0) {
+          const redeemedCount = await manager.count(CouponRedemption, {
+            where: {
+              couponId: coupon.id,
+              userId,
+              status: In([RedemptionStatus.APPLIED, RedemptionStatus.REDEEMED]),
+            },
+          });
+
+          if (redeemedCount >= Number(coupon.perUserLimit)) {
+            throw new HttpException('Coupon has reached per-user limit', HttpStatus.BAD_REQUEST);
+          }
+        }
+
+        discountAmount = this.calculateCouponDiscount(coupon, subtotal, shippingFee);
+
+        coupon.usedCount = Number(coupon.usedCount) + 1;
+        await manager.save(coupon);
+
+        const couponRedemption = manager.create(CouponRedemption, {
+          couponId: coupon.id,
+          userId,
+          orderId: order.id,
+          discountAmount,
+          status: RedemptionStatus.APPLIED,
+        });
+        await manager.save(couponRedemption);
+      }
+
+      order.totalAmount = Math.max(0, subtotal + shippingFee - discountAmount);
       await manager.save(order);
       return order
     });
@@ -218,10 +291,10 @@ export class OrdersService {
     return order;
   }
 
-  async updateStatus(orderId: number, next: OrderStatus, actor: {id: number, role: ActorRole, reason?: string}) {
+  async updateStatus(orderId: number, next: OrderStatus, actor: { id: number, role: ActorRole, reason?: string }) {
     return this.dataSource.manager.transaction(async (manager) => {
       const order = await manager.findOne(Order, {
-        where: { id: orderId},
+        where: { id: orderId },
         relations: ['items', 'items.variant', 'user'],
       })
       if (!order) throw new HttpException('Order not found', HttpStatus.NOT_FOUND);
@@ -235,18 +308,18 @@ export class OrdersService {
 
       // Handle CANCELED status - restore stock and remove coupon redemption
       if (next === OrderStatus.CANCELED || next === OrderStatus.REFUNDED) {
-        const inventoryItems: {variant: ProductVariant; quantity: number}[] = [];
-        
+        const inventoryItems: { variant: ProductVariant; quantity: number }[] = [];
+
         for (const it of order.items) {
           const variant = await manager
-          .createQueryBuilder(ProductVariant, 'variant')
-          .innerJoinAndSelect('variant.product', 'product')
-          .where('variant.id = :id', { id: it.variant.id })
-          .setLock('pessimistic_write')
-          .getOne();
+            .createQueryBuilder(ProductVariant, 'variant')
+            .innerJoinAndSelect('variant.product', 'product')
+            .where('variant.id = :id', { id: it.variant.id })
+            .setLock('pessimistic_write')
+            .getOne();
 
           if (!variant) throw new HttpException('Product variant not found', HttpStatus.NOT_FOUND);
-          
+
           const inventory = await manager.findOne(Inventory, {
             where: { variant: { id: it.variant.id } },
           })
@@ -254,7 +327,7 @@ export class OrdersService {
 
           inventory.quantity += it.quantity;
           await manager.save(inventory);
-          inventoryItems.push({variant, quantity: it.quantity});
+          inventoryItems.push({ variant, quantity: it.quantity });
         }
 
         if (inventoryItems.length > 0) {
@@ -263,16 +336,16 @@ export class OrdersService {
               ? `Return products for shop for order #${order.id}`
               : `Return products for order #${order.id}`;
 
-            for (const item of inventoryItems) {
-              const inventoryTransaction = manager.create(InventoryTransaction, {
-                variantId: item.variant.id,
-                userId: actor.id,
-                type: InventoryType.RETURN,
-                quantity: item.quantity,
-                note: reasonNote,
-              });
-              await manager.save(inventoryTransaction);
-            }
+          for (const item of inventoryItems) {
+            const inventoryTransaction = manager.create(InventoryTransaction, {
+              variantId: item.variant.id,
+              userId: actor.id,
+              type: InventoryType.RETURN,
+              quantity: item.quantity,
+              note: reasonNote,
+            });
+            await manager.save(inventoryTransaction);
+          }
         }
       }
 
