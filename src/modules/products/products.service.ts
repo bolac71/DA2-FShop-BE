@@ -14,6 +14,9 @@ import { SizesService } from '../sizes/sizes.service';
 import { InventoryTransaction } from '../inventories/entities/inventory-transaction.entity';
 import { Inventory } from '../inventories/entities/inventory.entity';
 import { InventoryType } from 'src/constants/inventory-type.enum';
+import { CouponStatus, CouponType } from 'src/constants';
+import { Coupon } from '../coupons/entities';
+import { CouponsService } from '../coupons/coupons.service';
 
 @Injectable()
 export class ProductsService {
@@ -33,7 +36,68 @@ export class ProductsService {
     private categoriesService: CategoriesService,
     private colorsService: ColorsService,
     private sizesService: SizesService,
+    private couponsService: CouponsService,
   ) { }
+
+  private getCouponDiscountAmount(coupon: Coupon, productPrice: number) {
+    const couponValue = Number(coupon.value) || 0;
+    const maxDiscountAmount = Number(coupon.maxDiscountAmount) || 0;
+
+    if (coupon.type === CouponType.FIXED) {
+      return Math.min(couponValue, productPrice);
+    }
+
+    if (coupon.type === CouponType.PERCENT) {
+      const rawDiscount = (productPrice * couponValue) / 100;
+      const cappedDiscount =
+        maxDiscountAmount > 0 ? Math.min(rawDiscount, maxDiscountAmount) : rawDiscount;
+      return Math.min(cappedDiscount, productPrice);
+    }
+
+    return 0;
+  }
+
+  private getBestCouponForProduct(product: Product, coupons: Coupon[]) {
+    const now = new Date();
+    const productPrice = Number(product.price) || 0;
+
+    let bestCoupon: Coupon | null = null;
+    let maxDiscount = 0;
+
+    for (const coupon of coupons) {
+      if (!coupon.isPublic || !coupon.isActive || coupon.status !== CouponStatus.ACTIVE) {
+        continue;
+      }
+
+      if (coupon.startDate > now || coupon.endDate < now) {
+        continue;
+      }
+
+      if (coupon.applicableProduct && coupon.applicableProduct !== product.id) {
+        continue;
+      }
+
+      if ((Number(coupon.minOrderAmount) || 0) > productPrice) {
+        continue;
+      }
+
+      if ((coupon.maxUses || 0) > 0 && (coupon.usedCount || 0) >= (coupon.maxUses || 0)) {
+        continue;
+      }
+
+      const discount = this.getCouponDiscountAmount(coupon, productPrice);
+
+      if (discount > maxDiscount) {
+        maxDiscount = discount;
+        bestCoupon = coupon;
+      }
+    }
+
+    return {
+      maxCouponDiscount: Number(maxDiscount.toFixed(2)),
+      bestCouponCode: bestCoupon?.code ?? null,
+    };
+  }
 
   async create(
     createProductDto: CreateProductDto,
@@ -146,6 +210,8 @@ export class ProductsService {
       order: { [sortBy]: sortOrder },
     });
 
+    const publicCoupons = await this.couponsService.getPublicActiveCoupons();
+
     // Get product IDs for querying sold quantities
     const productIds = data.map((p) => p.id);
 
@@ -162,7 +228,7 @@ export class ProductsService {
         const variantIds = variants.map((v) => v.id);
 
         // Query all EXPORT transactions for these variants
-        const soldData = await this.inventoryTransactionRepository.query(
+        const soldData: Array<{ product_id: number; sold_quantity: string }> = await this.inventoryTransactionRepository.query(
           `SELECT pv.product_id, COALESCE(SUM(it.quantity), 0) as sold_quantity
            FROM inventory_transactions it
            JOIN product_variants pv ON it.variant_id = pv.id
@@ -172,14 +238,15 @@ export class ProductsService {
         );
 
         // Map sold quantities by product ID
-        soldData.forEach((row: any) => {
-          soldQuantitiesByProduct[row.product_id] = parseInt(row.sold_quantity, 10);
+        soldData.forEach((row) => {
+          soldQuantitiesByProduct[row.product_id] = Number(row.sold_quantity) || 0;
         });
       }
     }
 
     // Filter images and variants by isActive and add stats
     const processedData = data.map((product) => ({
+      ...this.getBestCouponForProduct(product, publicCoupons),
       ...product,
       images: product.images?.filter((img) => img.isActive) ?? [],
       variants: product.variants?.filter((v) => v.isActive) ?? [],
