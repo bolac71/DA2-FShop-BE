@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -101,6 +99,19 @@ export class CouponsService {
     return response;
   }
 
+  async getPublicActiveCoupons() {
+    const now = new Date();
+
+    return this.couponRepository
+      .createQueryBuilder('coupon')
+      .where('coupon.isPublic = :isPublic', { isPublic: true })
+      .andWhere('coupon.isActive = :isActive', { isActive: true })
+      .andWhere('coupon.status = :status', { status: CouponStatus.ACTIVE })
+      .andWhere('coupon.startDate <= :now', { now })
+      .andWhere('coupon.endDate >= :now', { now })
+      .getMany();
+  }
+
   async getOne(id: number) {
     const coupon = await this.couponRepository.findOne({ where: { id } });
     if (!coupon) {
@@ -185,7 +196,7 @@ export class CouponsService {
     const coupon = await this.couponRepository.findOne({ where: { id } });
     if (!coupon) throw new HttpException('Coupon not found', HttpStatus.NOT_FOUND);
 
-    coupon.isActive = true;
+    coupon.isActive = false;
     await this.couponRepository.save(coupon);
 
     return {

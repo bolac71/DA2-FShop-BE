@@ -11,6 +11,7 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { CartItem } from '../carts/entities';
 import { InventoryTransaction } from '../inventories/entities/inventory-transaction.entity';
 import { Inventory } from '../inventories/entities/inventory.entity';
+import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
   imports: [
@@ -20,7 +21,8 @@ import { Inventory } from '../inventories/entities/inventory.entity';
     ColorsModule,
     SizesModule,
     CloudinaryModule,
-    CartItem
+    CartItem,
+    CouponsModule,
   ],
   controllers: [ProductsController],
   providers: [ProductsService],
