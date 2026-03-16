@@ -13,7 +13,7 @@ import { ActorRole } from 'src/utils/order-status.rules';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(private readonly ordersService: OrdersService) { }
 
   @Post()
   @UseGuards(AuthGuard('jwt'))
@@ -129,7 +129,7 @@ export class OrdersController {
     @Req() req: Request,
     @Param('orderId', ParseIntPipe) orderId: number,
   ) {
-    const { id } = req['user'];
-    return this.ordersService.userConfirmDelivery(orderId, id);
+    const { sub } = req['user'];
+    return this.ordersService.userConfirmDelivery(orderId, sub);
   }
 }

@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Address, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User } from 'src/entities';
-import { DataSource, FindOptionsWhere, In, Like, Repository } from 'typeorm';
+import { Brackets, DataSource, FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { CreateOrderDto } from './dtos/create-order.dto';
 import { CouponStatus, CouponType, RedemptionStatus, ShippingMethod } from 'src/constants';
 import { OrderStatus } from 'src/constants/order-status.enum';
@@ -211,20 +211,50 @@ export class OrdersService {
   }
 
   async getMyOrders(userId: number, query: OrderQueryDto) {
-    const { page, limit, sortBy = 'id', sortOrder = 'DESC', status } = query;
-    const [data, total] = await this.orderRepository.findAndCount({
-      where: {
-        user: { id: userId },
-        ...(status && { status }),
-      },
-      relations: [
-        'items',
-        'items.variant',
-        'items.variant.product',
-      ],
-      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { [sortBy]: sortOrder },
-    });
+    const { page, limit, sortBy = 'id', sortOrder = 'DESC', status, search } = query;
+    const sortFieldMap: Record<string, string> = {
+      id: 'order.id',
+      createdAt: 'order.createdAt',
+      updatedAt: 'order.updatedAt',
+      totalAmount: 'order.totalAmount',
+      status: 'order.status',
+    };
+
+    const qb = this.orderRepository
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.items', 'items')
+      .leftJoinAndSelect('items.variant', 'variant')
+      .leftJoinAndSelect('variant.product', 'product')
+      .leftJoin('order.user', 'user')
+      .where('user.id = :userId', { userId })
+      .distinct(true);
+
+    if (status) {
+      qb.andWhere('order.status = :status', { status });
+    }
+
+    if (search?.trim()) {
+      const normalizedSearch = `%${search.trim()}%`;
+
+      qb.andWhere(
+        new Brackets((subQb) => {
+          subQb
+            .where('CAST(order.id AS CHAR) LIKE :search', { search: normalizedSearch })
+            .orWhere('LOWER(order.recipientName) LIKE LOWER(:search)', { search: normalizedSearch })
+            .orWhere('LOWER(order.detailAddress) LIKE LOWER(:search)', { search: normalizedSearch })
+            .orWhere('LOWER(order.note) LIKE LOWER(:search)', { search: normalizedSearch })
+            .orWhere('LOWER(product.name) LIKE LOWER(:search)', { search: normalizedSearch });
+        }),
+      );
+    }
+
+    qb.orderBy(sortFieldMap[sortBy] ?? 'order.id', sortOrder);
+
+    if (page && limit) {
+      qb.take(limit).skip((page - 1) * limit);
+    }
+
+    const [data, total] = await qb.getManyAndCount();
 
     return { pagination: { total, page, limit }, data };
   }
