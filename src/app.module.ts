@@ -26,6 +26,7 @@ import { InventoriesModule } from './modules/inventories/inventories.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { CouponsModule } from './modules/coupons/coupons.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
+import { PostsModule } from './modules/posts/posts.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
     OrdersModule,
     CouponsModule,
     ReviewsModule,
+    PostsModule,
   ],
   controllers: [AppController],
   providers: [

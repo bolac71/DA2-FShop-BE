@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import {
   Column,
   CreateDateColumn,
@@ -8,6 +7,7 @@ import {
   OneToMany,
   OneToOne,
 } from 'typeorm';
+import { Exclude } from 'class-transformer';
 import { Role } from '../../../constants/role.enum';
 import { Address } from 'src/modules/addresses/entities/address.entity';
 import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
@@ -15,6 +15,7 @@ import { Cart } from 'src/modules/carts/entities';
 import { Order } from 'src/modules/orders/entities';
 import { ReviewVote } from 'src/modules/reviews/entities/review-vote.entity';
 import { Review } from 'src/modules/reviews/entities/review.entity';
+import { Post, PostComment, PostLike } from 'src/modules/posts/entities';
 
 @Entity('users')
 export class User {
@@ -28,12 +29,14 @@ export class User {
   email: string;
 
   @Column({ type: 'varchar', nullable: false })
+  @Exclude()
   password: string;
 
   @Column({ type: 'varchar', nullable: true })
   avatar: string;
 
   @Column({ name: 'public_id', type: 'varchar', nullable: true })
+  @Exclude()
   publicId: string;
 
   @Column({
@@ -56,20 +59,38 @@ export class User {
   updatedAt: Date;
 
   @OneToMany(() => Address, (address) => address.user, { cascade: ['soft-remove'] })
+  @Exclude()
   addresses: Address[];
 
   @OneToMany(() => Wishlist, (wishlist) => wishlist.user, { cascade: true })
+  @Exclude()
   wishlists: Wishlist[];
 
   @OneToOne(() => Cart, (cart) => cart.user, { cascade: true })
+  @Exclude()
   cart: Cart;
 
   @OneToMany(() => Order, order => order.user)
+  @Exclude()
   orders: Order[];
 
   @OneToMany(() => Review, review => review.user)
+  @Exclude()
   reviews: Review[];
 
   @OneToMany(() => ReviewVote, (vote) => vote.user)
+  @Exclude()
   reviewVotes: ReviewVote[];
+
+  @OneToMany(() => Post, post => post.user)
+  @Exclude()
+  posts: Post[];
+
+  @OneToMany(() => PostLike, (like) => like.user)
+  @Exclude()
+  postLikes: PostLike[];
+
+  @OneToMany(() => PostComment, (comment) => comment.user)
+  @Exclude()
+  postComments: PostComment[];
 }

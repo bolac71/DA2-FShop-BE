@@ -24,6 +24,12 @@ import {
   Review,
   ReviewImage,
   ReviewVote,
+  Post,
+  PostComment,
+  PostImage,
+  PostLike,
+  Hashtag,
+  PostHashtag,
 } from './entities';
 
 /**
@@ -62,6 +68,12 @@ export const AppDataSource = new DataSource({
     Review,
     ReviewImage,
     ReviewVote,
+    Post,
+    PostComment,
+    PostImage,
+    PostLike,
+    Hashtag,
+    PostHashtag,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
