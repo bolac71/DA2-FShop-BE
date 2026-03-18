@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UnauthorizedException, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Req, UnauthorizedException, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiNotFoundResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PostsService } from './posts.service';
-import { CreatePostDto } from './dtos';
+import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
 import { QueryDto } from 'src/dtos';
+import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 
 @ApiTags('Posts')
 @Controller('posts')
@@ -70,4 +71,84 @@ export class PostsController {
   findOne(@Param('id') id: number) {
     return this.postsService.findById(id);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/like')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Like or unlike a post (toggle)' })
+  @ApiNotFoundResponse({ description: 'Post not found' })
+  toggleLike(@Req() request: Request, @Param('id') id: number) {
+    const { sub } = request['user'];
+    return this.postsService.toggleLike(id, sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/comment')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Add a comment to a post' })
+  @ApiNotFoundResponse({ description: 'Post not found' })
+  addComment(@Req() request: Request, @Param('id') id: number, @Body() dto: CreateCommentDto) {
+    const { sub } = request['user'];
+    return this.postsService.addComment(id, sub, dto);
+  }
+
+  @Get(':id/comments')
+  @ApiOperation({ summary: 'Get comments for a post' })
+  @ApiNotFoundResponse({ description: 'Post not found' })
+  getComments(@Param('id') id: number, @Query() query: QueryDto) {
+    return this.postsService.getComments(id, query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put(':postId/comments/:commentId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a comment' })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  updateComment(
+    @Req() request: Request,
+    @Param('commentId') commentId: number,
+    @Body() updateCommentDto: UpdateCommentDto,
+  ) {
+    const { sub } = request['user'];
+    return this.postsService.updateComment(commentId, sub, updateCommentDto);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Delete(':postId/comments/:commentId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a comment' })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  deleteComment(@Req() request: Request, @Param('postId') postId: number, @Param('commentId') commentId: number) {
+    const { sub } = request['user'];
+    return this.postsService.deleteComment(postId, commentId, sub);
+  }
+
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post(':postId/comments/:commentId/replies')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Add a reply to a comment' })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  addReply(
+    @Req() request: Request,
+    @Param('postId') postId: number,
+    @Param('commentId') commentId: number,
+    @Body() dto: CreateCommentDto,
+  ) {
+    const { sub } = request['user'];
+    return this.postsService.addReply(postId, commentId, sub, dto);
+  }
+
+  @Get(':postId/comments/:commentId/replies')
+  @ApiOperation({ summary: 'Get replies for a comment (supports nested threading)' })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  getReplies(
+    @Param('postId') postId: number,
+    @Param('commentId') commentId: number,
+    @Query() query: QueryDto
+  ) {
+    return this.postsService.getReplies(postId, commentId, query);
+  }
+
+
 }

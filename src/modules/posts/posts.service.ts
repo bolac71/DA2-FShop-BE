@@ -1,9 +1,9 @@
 import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, ILike, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, ILike, In, Repository } from 'typeorm';
 import { Hashtag, PostComment, PostHashtag, PostImage, PostLike, Post } from './entities';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
-import { CreatePostDto } from './dtos';
+import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
 import { User } from 'src/entities';
 import { plainToInstance } from 'class-transformer';
 import { QueryDto } from 'src/dtos';
@@ -374,5 +374,237 @@ export class PostsService {
     });
     if (!post) throw new HttpException('Not found post', HttpStatus.NOT_FOUND);
     return post;
+  }
+
+  async toggleLike(postId: number, userId: number) {
+    return await this.dataSource.transaction(async (manager) => {
+      // 1. Check post
+      const post = await manager.findOne(Post, {
+        where: {id: postId, isActive: true},
+      })
+
+      if (!post) throw new HttpException('Post not found', HttpStatus.NOT_FOUND);
+
+      // 2. Check like
+      const existingLike = await manager.findOne(PostLike, {
+        where: {postId, userId}
+      })
+
+      if (existingLike) {
+        await manager.remove(existingLike);
+        post.totalLikes = Math.max(0, post.totalLikes - 1);
+        await manager.save(post)
+        return { message: 'Post unliked', totalLikes: post.totalLikes};
+      }
+      else {
+        const user = await manager.findOne(User, {where: {id: userId}});
+        if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+
+        const like = manager.create(PostLike, {post, user});
+        await manager.save(like);
+
+        post.totalLikes++;
+        await manager.save(post);
+
+        return { message: 'Post liked', totalLikes: post.totalLikes};
+      }
+    })
+  }
+
+  async addComment(postId: number, userId: number, createCommentDto: CreateCommentDto) {
+    return await this.dataSource.transaction(async (manager) => {
+      // 1. Check post
+      const post = await manager.findOne(Post, {
+        where: {id: postId, isActive: true},
+      });
+      if (!post) throw new HttpException('Post not found', HttpStatus.NOT_FOUND);
+
+      // 2. Check user
+      const user = await manager.findOne(User, { where: { id: userId } });
+      if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+
+      // 3. Create comment
+      const comment = manager.create(PostComment, {
+        post,
+        user, 
+        content: createCommentDto.content,
+        depth: 0,
+        replyCount: 0,
+        parentComment: null,
+      })
+      const savedComment = await manager.save(comment);
+      post.totalComments++;
+      await manager.save(post);
+
+      return plainToInstance(PostComment, savedComment);
+    })
+  }
+
+  async getComments(postId: number, query: QueryDto) {
+    const post = await this.postRepository.findOne({
+      where: {id: postId, isActive: true}
+    })
+    if (!post) throw new HttpException('Post not found', HttpStatus.NOT_FOUND);
+
+    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
+
+    const [data, total] = await this.postCommentRepository.findAndCount({
+      where: {postId, isActive: true},
+      relations: ['user'],
+      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
+      order: { [sortBy]: sortOrder },
+    })
+
+    const response = {
+      pagination: {
+        total,
+        page,
+        limit,
+      },
+      data,
+    }
+    return response;
+  }
+
+  async updateComment(commentId: number, userId: number, updateCommentDto: UpdateCommentDto) {
+    return await this.dataSource.transaction(async (manager) => {
+      const comment = await manager.findOne(PostComment, {
+        where: { id: commentId},
+        relations: ['user', 'post'],
+      });
+
+      if (!comment) throw new HttpException('Comment not found', HttpStatus.NOT_FOUND);
+
+      // Check ownership
+      if (comment.user.id !== userId) {
+        throw new HttpException('You can only update your own comments', HttpStatus.FORBIDDEN);
+      }
+
+      comment.content = updateCommentDto.content;
+      await manager.save(comment);
+
+      return { message: 'Comment updated successfully', comment };
+    });
+  }
+
+  private async countTotalDescendants(commentId: number, manager: EntityManager): Promise<number> {
+    const directReplies = await manager.find(PostComment, {
+      where: { parentComment: { id: commentId } },
+      select: ['id', 'replyCount'],
+    });
+
+    if (directReplies.length === 0) return 0;
+
+    let total = directReplies.length;
+
+    // Recursively count nested replies
+    for (const reply of directReplies) {
+      total += await this.countTotalDescendants(reply.id, manager);
+    }
+
+    return total;
+  }
+  
+  async deleteComment(postId: number, commentId: number, userId: number) {
+    return await this.dataSource.transaction(async (manager) => {
+      const comment = await manager.findOne(PostComment, {
+        where: { id: commentId, post: { id: postId } },
+        relations: ['user', 'post', 'parentComment'],
+      });
+
+      if (!comment) throw new HttpException('Comment not found', HttpStatus.NOT_FOUND);
+
+      // Check ownership
+      if (comment.user.id !== userId) {
+        throw new HttpException('You can only delete your own comments', HttpStatus.FORBIDDEN);
+      }
+
+      const post = comment.post;
+      const parentComment = comment.parentComment;
+
+      // Count total comments to be deleted (this comment + all nested descendants)
+      const descendantsCount = await this.countTotalDescendants(comment.id, manager);
+      const totalToDelete = 1 + descendantsCount;
+
+      // If this is a reply, decrement parent's replyCount
+      if (parentComment) {
+        parentComment.replyCount = Math.max(0, parentComment.replyCount - 1);
+        await manager.save(parentComment);
+      }
+
+      // Delete comment (cascade will delete all nested replies automatically)
+      await manager.remove(comment);
+
+      // Decrement post's totalComments by total deleted
+      post.totalComments = Math.max(0, post.totalComments - totalToDelete);
+      await manager.save(post);
+
+      return {
+        message: 'Comment deleted successfully',
+        deletedCount: totalToDelete,
+      };
+    });
+  }
+
+  async addReply(postId: number, commentId: number, userId: number, dto: CreateCommentDto) {
+    return await this.dataSource.transaction(async (manager) => {
+      // 1. Check parent comment
+      const parentComment = await manager.findOne(PostComment, {
+        where: { id: commentId, post: { id: postId } },
+        relations: ['post', 'post.user', 'user'],
+      });
+      if (!parentComment) throw new HttpException('Parent comment not found', HttpStatus.NOT_FOUND);
+
+      // 2. Check user
+      const user = await manager.findOne(User, { where: { id: userId } });
+      if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+
+      // 3. Create reply - auto-calculate depth from parent
+      const reply = manager.create(PostComment, {
+        post: parentComment.post,
+        user,
+        content: dto.content,
+        parentComment,
+        depth: parentComment.depth + 1, // Auto-increment depth
+        replyCount: 0,
+      });
+
+      const savedReply = await manager.save(reply);
+
+      // 4. Update parent comment replyCount
+      parentComment.replyCount += 1;
+      await manager.save(parentComment);
+
+      // 5. Update post totalComments
+      parentComment.post.totalComments += 1;
+      await manager.save(parentComment.post);
+
+      return savedReply;
+    });
+  }
+
+  async getReplies(postId: number, commentId: number, query: QueryDto) {
+    // 1. Check parent comment
+    const parentComment = await this.postCommentRepository.findOne({
+      where: { id: commentId, post: { id: postId } },
+    });
+
+    if (!parentComment) throw new HttpException('Parent comment not found', HttpStatus.NOT_FOUND);
+
+    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
+    const [data, total] = await this.postCommentRepository.findAndCount({
+      where: { parentComment: { id: commentId }, content: search ? ILike(`%${search}%`) : undefined, isActive: true },
+      relations: ['user'],
+      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
+      order: { [sortBy]: sortOrder },
+    })
+    return {
+      pagination: {
+        total, 
+        page, 
+        limit
+      },
+      data
+    }
   }
 }
