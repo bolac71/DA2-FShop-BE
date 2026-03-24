@@ -29,6 +29,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
 import { PostsModule } from './modules/posts/posts.module';
 import { MinioModule } from './modules/minio/minio.module';
 import { BackupModule } from './modules/backup/backup.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { BackupModule } from './modules/backup/backup.module';
     PostsModule,
     MinioModule,
     BackupModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -16,6 +16,7 @@ import { Order } from 'src/modules/orders/entities';
 import { ReviewVote } from 'src/modules/reviews/entities/review-vote.entity';
 import { Review } from 'src/modules/reviews/entities/review.entity';
 import { Post, PostComment, PostLike } from 'src/modules/posts/entities';
+import { Notification } from 'src/modules/notifications/entities/notification.entity';
 
 @Entity('users')
 export class User {
@@ -93,4 +94,8 @@ export class User {
   @OneToMany(() => PostComment, (comment) => comment.user)
   @Exclude()
   postComments: PostComment[];
+
+  @OneToMany(() => Notification, (notification) => notification.user)
+  @Exclude()
+  notifications: Notification[];
 }

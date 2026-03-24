@@ -30,6 +30,7 @@ import {
   PostLike,
   Hashtag,
   PostHashtag,
+  Notification,
 } from './entities';
 
 /**
@@ -74,6 +75,7 @@ export const AppDataSource = new DataSource({
     PostLike,
     Hashtag,
     PostHashtag,
+    Notification,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

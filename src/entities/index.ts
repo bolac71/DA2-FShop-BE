@@ -21,3 +21,4 @@ export { Order, OrderItem } from '../modules/orders/entities';
 export { Coupon, CouponRedemption } from '../modules/coupons/entities';
 export { Review, ReviewImage, ReviewVote } from '../modules/reviews/entities';
 export { Post, PostComment, PostImage, PostLike, Hashtag, PostHashtag } from '../modules/posts/entities';
+export { Notification } from '../modules/notifications/entities/notification.entity';
