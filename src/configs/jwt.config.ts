@@ -6,6 +6,6 @@ export const getJwtConfig = (configService: ConfigService): JwtModuleOptions => 
   secret: configService.get<string>('JWT_SECRET', 'default_jwt_secret'),
   signOptions: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expiresIn: configService.get('JWT_ACCESS_EXPIRATION', '15m') as any,
+    expiresIn: configService.get('JWT_ACCESS_EXPIRATION', '30d') as any,
   },
 });
