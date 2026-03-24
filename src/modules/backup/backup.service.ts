@@ -6,12 +6,9 @@ import { MinioService } from '../minio/minio.service';
 import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import * as fs from 'fs';
-import { promisify } from 'util';
-import { exec } from 'child_process';
+import { execSync } from 'child_process';
 import { BackupMetadata } from './interfaces/backup-metadata.interface';
 import { Cron } from '@nestjs/schedule';
-
-const execAsync = promisify(exec);
 
 @Injectable()
 export class BackupService {
@@ -44,7 +41,11 @@ export class BackupService {
     return `backup_${year}-${month}-${day}_${hours}${minutes}${seconds}.dump`;
   }
 
-  async createBackup(): Promise<BackupMetadata> {
+  private runCommand(command: string): void {
+    execSync(command, { stdio: 'pipe' });
+  }
+
+  async createBackup() {
     const filename = this.generateBackupFilename();
     const tempFilePath = path.join(this.tempDir, filename);
 
@@ -61,23 +62,25 @@ export class BackupService {
       // Step 1: Create backup inside container
       const dumpCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} pg_dump -U ${dbUsername} -d ${dbName} -F c -f ${containerBackupPath}`;
 
-      await execAsync(dumpCommand);
+      this.runCommand(dumpCommand);
 
       this.logger.log(`Database dumped inside container: ${containerBackupPath}`);
 
       // Step 2: Copy backup file from container to host
       const copyCommand = `docker cp ${containerName}:${containerBackupPath} "${tempFilePath}"`;
 
-      await execAsync(copyCommand);
+      this.runCommand(copyCommand);
 
       this.logger.log(`Backup copied to host: ${tempFilePath}`);
 
       // Step 3: Clean up backup file inside container
       const cleanupCommand = `docker exec ${containerName} rm ${containerBackupPath}`;
 
-      await execAsync(cleanupCommand).catch(() => {
+      try {
+        this.runCommand(cleanupCommand);
+      } catch {
         this.logger.warn('Failed to clean up backup file in container');
-      });
+      }
 
       // Step 4: Upload to MinIO
       await this.minioService.uploadFile(filename, tempFilePath);
@@ -113,7 +116,7 @@ export class BackupService {
     }
   }
 
-  async listBackups(): Promise<BackupMetadata[]> {
+  async listBackups() {
     try {
       const files = await this.minioService.listFiles();
 
@@ -134,7 +137,7 @@ export class BackupService {
     }
   }
 
-  async restoreBackup(filename: string): Promise<void> {
+  async restoreBackup(filename: string) {
     const tempFilePath = path.join(this.tempDir, filename);
 
     const dbUsername = this.configService.get<string>('DB_USERNAME');
@@ -155,7 +158,7 @@ export class BackupService {
       // Step 2: Copy backup file to container
       const copyToContainerCommand = `docker cp "${tempFilePath}" ${containerName}:${containerBackupPath}`;
 
-      await execAsync(copyToContainerCommand);
+      this.runCommand(copyToContainerCommand);
 
       this.logger.log(`Backup copied to container: ${containerBackupPath}`);
 
@@ -163,7 +166,7 @@ export class BackupService {
       const terminateConnectionsCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} psql -U ${dbUsername} -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${dbName}' AND pid <> pg_backend_pid();"`;
 
       try {
-        await execAsync(terminateConnectionsCommand);
+        this.runCommand(terminateConnectionsCommand);
         this.logger.log('Active database connections terminated');
       } catch (error) {
         this.logger.warn(
@@ -174,23 +177,25 @@ export class BackupService {
       // Step 4: Drop and recreate schema
       const dropSchemaCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} psql -U ${dbUsername} -d ${dbName} -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"`;
 
-      await execAsync(dropSchemaCommand);
+      this.runCommand(dropSchemaCommand);
 
       this.logger.log('Schema dropped and recreated');
 
       // Step 5: Restore from backup
       const restoreCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} pg_restore -U ${dbUsername} -d ${dbName} -F c ${containerBackupPath}`;
 
-      await execAsync(restoreCommand);
+      this.runCommand(restoreCommand);
 
       this.logger.log(`Database restored successfully from ${filename}`);
 
       // Step 6: Clean up backup file in container
       const cleanupCommand = `docker exec ${containerName} rm ${containerBackupPath}`;
 
-      await execAsync(cleanupCommand).catch(() => {
+      try {
+        this.runCommand(cleanupCommand);
+      } catch {
         this.logger.warn('Failed to clean up backup file in container');
-      });
+      }
 
       // Clean up temp file on host
       fs.unlinkSync(tempFilePath);
@@ -208,7 +213,7 @@ export class BackupService {
     }
   }
 
-  async deleteBackup(filename: string): Promise<void> {
+  async deleteBackup(filename: string) {
     try {
       this.logger.log(`Deleting backup: ${filename}`);
 
@@ -225,7 +230,7 @@ export class BackupService {
     }
   }
 
-  async getBackupInfo(filename: string): Promise<BackupMetadata> {
+  async getBackupInfo(filename: string) {
     try {
       const stat = await this.minioService.getFileStat(filename);
       const downloadUrl = await this.minioService.getFileUrl(filename, 3600);
@@ -251,7 +256,7 @@ export class BackupService {
   // Production: Every day at 2 AM
   // Demo mode (every 10 seconds): @Cron('*/10 * * * * *')
   @Cron('0 2 * * *')
-  async handleScheduledBackup(): Promise<void> {
+  async handleScheduledBackup() {
     this.logger.log('Starting scheduled automatic backup...');
 
     try {
