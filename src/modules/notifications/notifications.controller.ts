@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto, QueryNotificationDto } from './dtos';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
@@ -18,5 +18,22 @@ export class NotificationsController {
   ) {
     const { sub } = req['user'];
     return this.notificationsService.getMyNotifications(sub, query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mark one notification as read' })
+  @Patch(':id/read')
+  markOneAsRead(@Req() req: Request, @Param('id') id: number) {
+    const { sub } = req['user'];
+    return this.notificationsService.markOneAsRead(id, sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Mark all my notifications as read' })
+  @Patch('/read-all')
+  markAsRead(@Req() req: Request) {
+    const { sub } = req['user'];
+    return this.notificationsService.markAsRead(sub);
   }
 }

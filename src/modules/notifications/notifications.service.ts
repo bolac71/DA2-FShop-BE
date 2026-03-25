@@ -60,4 +60,29 @@ export class NotificationsService {
     };
     return response;
   }
+
+  async markOneAsRead(notificationId: number, userId: number) {
+    const notification = await this.notificationRepository.findOne({
+      where: {
+        id: notificationId,
+        user: { id: userId },
+      },
+    });
+
+    if (!notification) throw new HttpException('Notification not found', HttpStatus.NOT_FOUND);
+
+    if (notification.isRead) return notification; 
+
+    notification.isRead = true;
+    return this.notificationRepository.save(notification);
+  }
+
+  async markAsRead(userId: number) {
+    if (!(await this.userRepository.findBy({ id: userId })))
+      throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
+    return this.notificationRepository.update(
+      { user: { id: userId }, isRead: false },
+      { isRead: true },
+    );
+  }
 }
