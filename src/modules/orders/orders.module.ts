@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order, OrderItem } from './entities';
 import { CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, ProductVariant, User } from 'src/entities';
 import { InventoriesModule } from '../inventories/inventories.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { InventoriesModule } from '../inventories/inventories.module';
       CouponRedemption,
     ]),
     InventoriesModule,
+    NotificationsModule
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

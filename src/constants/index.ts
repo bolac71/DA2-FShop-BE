@@ -7,3 +7,4 @@ export * from './inventory-type.enum';
 export * from './coupon-type.enum';
 export * from './coupon-status.enum';
 export * from './redemption-status.enum';
+export * from './notification-type.enum';
