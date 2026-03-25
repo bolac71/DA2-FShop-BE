@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Notification, User } from 'src/entities';
 import { Repository } from 'typeorm';
@@ -7,6 +7,8 @@ import { CreateNotificationDto, QueryNotificationDto } from './dtos';
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     @InjectRepository(Notification)
     private notificationRepository: Repository<Notification>,
@@ -16,10 +18,10 @@ export class NotificationsService {
 
   async create(createNotificationDto: CreateNotificationDto) {
     const { userId } = createNotificationDto;
+    this.logger.log(`Create notification start: user=${userId}, type=${createNotificationDto.type}`);
 
     const user = await this.userRepository.findOneBy({ id: userId });
     if (!user) throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
-    console.log('Creating notification for userId:', userId);
 
     const notification = this.notificationRepository.create({
       ...createNotificationDto,
@@ -28,8 +30,10 @@ export class NotificationsService {
     });
 
     const savedNoti = await this.notificationRepository.save(notification);
+    this.logger.log(`Notification saved: id=${savedNoti.id}, user=${userId}`);
     
     this.notiGateway.sendToUser(userId, savedNoti);
+    this.logger.log(`Notification emitted: id=${savedNoti.id}, user=${userId}`);
     
     return savedNoti;
   }

@@ -1,18 +1,21 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Address, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User } from 'src/entities';
 import { Brackets, DataSource, FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { CreateOrderDto } from './dtos/create-order.dto';
-import { CouponStatus, CouponType, RedemptionStatus, ShippingMethod } from 'src/constants';
+import { CouponStatus, CouponType, NotificationType, RedemptionStatus, ShippingMethod } from 'src/constants';
 import { OrderStatus } from 'src/constants/order-status.enum';
 import { InventoryType } from 'src/constants/inventory-type.enum';
 import { OrderQueryDto } from 'src/dtos';
 import { ActorRole, ensureTransitionAllowed } from 'src/utils/order-status.rules';
 import { InventoriesModule } from '../inventories/inventories.module';
 import { InventoriesService } from '../inventories/inventories.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(Order) private orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
@@ -21,6 +24,7 @@ export class OrdersService {
     private readonly variantRepo: Repository<ProductVariant>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly inventoriesService: InventoriesService,
+    private notificationService: NotificationsService
   ) { }
 
   private calculateShippingFee(shippingMethod: ShippingMethod): number {
@@ -52,14 +56,15 @@ export class OrdersService {
   }
 
   async create(userId: number, createOrderDto: CreateOrderDto) {
-    return await this.dataSource.manager.transaction(async (manager) => {
+    this.logger.log(`Create order start: user=${userId}, address=${createOrderDto.addressId}, items=${createOrderDto.items.length}`);
+
+    const createdOrder = await this.dataSource.manager.transaction(async (manager) => {
       // Implementation for creating order within a transaction
       const { addressId, couponId, note, shippingMethod, items } = createOrderDto;
 
       // Validate user and address
       const user = await manager.findOne(User, { where: { id: userId } });
       if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
-      console.log(addressId)
       const address = await manager.findOne(Address, { where: { id: addressId, user: { id: userId } } });
       if (!address) throw new HttpException('Address not found', HttpStatus.NOT_FOUND);
 
@@ -206,8 +211,27 @@ export class OrdersService {
 
       order.totalAmount = Math.max(0, subtotal + shippingFee - discountAmount);
       await manager.save(order);
+
+      
       return order
     });
+
+    this.logger.log(`Create order committed: order=${createdOrder.id}, user=${userId}, total=${createdOrder.totalAmount}`);
+
+    try {
+      this.logger.log(`Trigger order notification: order=${createdOrder.id}, user=${userId}`);
+      await this.notificationService.create({
+        userId,
+        type: NotificationType.ORDER,
+        title: `Đặt hàng #${createdOrder.id} thành công`,
+        message: `Đơn hàng #${createdOrder.id} đã được tạo. Vui lòng theo dõi trạng thái trong mục Đơn hàng của tôi.`,
+      });
+      this.logger.log(`Order notification success: order=${createdOrder.id}, user=${userId}`);
+    } catch (error) {
+      this.logger.error(`Order notification failed: order=${createdOrder.id}, user=${userId}`, error instanceof Error ? error.stack : undefined);
+    }
+
+    return createdOrder;
   }
 
   async getMyOrders(userId: number, query: OrderQueryDto) {

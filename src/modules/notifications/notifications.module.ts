@@ -11,5 +11,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [TypeOrmModule.forFeature([Notification, User]), AuthModule],
   controllers: [NotificationsController],
   providers: [NotificationsService, NotificationGateway],
+  exports: [NotificationsService, NotificationGateway],
 })
 export class NotificationsModule {}

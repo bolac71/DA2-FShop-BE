@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/restrict-template-expressions */
+import { Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { MessageBody, OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, WebSocketGateway, WebSocketServer } from "@nestjs/websockets";
@@ -8,16 +8,18 @@ import { Socket, Server } from "socket.io";
 @WebSocketGateway({cors: { origin: '*' }})
 export class NotificationGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
+  private readonly logger = new Logger(NotificationGateway.name);
 
   constructor(private jwtService: JwtService, private configService: ConfigService) {}
 
   async handleConnection(client: Socket) {
     try {
       // 1. Extract token from query or headers
-      const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.split(' ')[1];
+      const rawToken = client.handshake.auth?.token || client.handshake.headers?.authorization?.split(' ')[1];
+      const token = typeof rawToken === 'string' ? rawToken : undefined;
 
       if (!token) {
-        console.log("No token provided. Disconnecting...");
+        this.logger.warn(`Socket ${client.id} missing token, disconnecting`);
         return client.disconnect();
       }
 
@@ -28,21 +30,26 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
       });
 
       // 3. Extract userId from payload
-      const userId = payload.userId;
+      const userId = payload?.sub ?? payload?.userId;
+      if (!userId) {
+        this.logger.warn(`Socket ${client.id} token payload missing user id, disconnecting`);
+        return client.disconnect();
+      }
       client.data.userId = userId;
 
       // 4. Join user room
       client.join(`user_${userId}`);
-      console.log(`Authenticated: User ${userId} connected with socket ${client.id}`);
+      this.logger.log(`Socket connected: user=${userId}, socket=${client.id}, room=user_${userId}`);
     }
     catch (err) {
-      console.log("Token invalid. Disconnecting...");
+      this.logger.warn(`Socket ${client.id} token invalid, disconnecting`);
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket) {
-    console.log("Client disconnected: " + client.id);
+    const userId = client.data?.userId;
+    this.logger.log(`Socket disconnected: user=${userId ?? 'unknown'}, socket=${client.id}`);
 
     this.server.emit('user-left', {
       message: `User ${client.id} has left the chat`,
@@ -50,6 +57,7 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
   }
 
   sendToUser(userId: number, data: any) {
+    this.logger.log(`Emit notification_received: user=${userId}, notificationId=${data?.id ?? 'unknown'}`);
     this.server.to(`user_${userId}`).emit('notification_received', data);
   }
 }
