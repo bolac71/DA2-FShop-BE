@@ -5,7 +5,7 @@ import { DataSource, ILike, In, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { ProductVariant } from './entities/product-variant.entity';
-import { CreateProductDto } from './dtos';
+import { CreateProductDto, ImageSearchResultDto, VoiceSearchResponseDto } from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { BrandsService } from '../brands/brands.service';
 import { CategoriesService } from '../categories/categories.service';
@@ -17,6 +17,7 @@ import { InventoryType } from 'src/constants/inventory-type.enum';
 import { CouponStatus, CouponType } from 'src/constants';
 import { Coupon } from '../coupons/entities';
 import { CouponsService } from '../coupons/coupons.service';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class ProductsService {
@@ -37,6 +38,7 @@ export class ProductsService {
     private colorsService: ColorsService,
     private sizesService: SizesService,
     private couponsService: CouponsService,
+    private aiService: AiService,
   ) { }
 
   private getCouponDiscountAmount(coupon: Coupon, productPrice: number) {
@@ -363,5 +365,38 @@ export class ProductsService {
       product.isActive = false;
       return await manager.save(product);
     });
+  }
+
+  async searchByImage(
+    fileBuffer: Buffer,
+    fileName: string,
+    topK: number = 12,
+  ): Promise<ImageSearchResultDto[]> {
+    // Validate file size (max 5MB)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024;
+    if (fileBuffer.length > MAX_FILE_SIZE) {
+      throw new HttpException(
+        'File size exceeds maximum limit of 5MB',
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
+
+    // Forward request to AI service
+    return await this.aiService.searchByImage(fileBuffer, fileName, topK);
+  }
+
+  async searchByVoice(
+    fileBuffer: Buffer,
+    fileName: string,
+  ): Promise<VoiceSearchResponseDto> {
+    const MAX_AUDIO_SIZE = 10 * 1024 * 1024;
+    if (fileBuffer.length > MAX_AUDIO_SIZE) {
+      throw new HttpException(
+        'Audio size exceeds maximum limit of 10MB',
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
+
+    return await this.aiService.searchByVoice(fileBuffer, fileName);
   }
 }

@@ -10,11 +10,15 @@ import {
   ParseIntPipe, 
   UseInterceptors,
   UploadedFiles,
+  UploadedFile,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags, ApiConsumes, ApiNotFoundResponse } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
-import { CreateProductDto } from './dtos';
+import { CreateProductDto, ImageSearchDto, ImageSearchResultDto, VoiceSearchResponseDto } from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
@@ -76,6 +80,36 @@ export class ProductsController {
   @ApiOperation({ summary: 'Get all active products with pagination and search' })
   findAll(@Query() query: QueryDto) {
     return this.productsService.findAll(query);
+  }
+
+  @Post('search/image')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Search products by image similarity' })
+  async searchByImage(
+    @UploadedFile() file: Express.Multer.File,
+    @Query() query: ImageSearchDto,
+  ): Promise<ImageSearchResultDto[]> {
+    if (!file) {
+      throw new BadRequestException('Image file is required');
+    }
+
+    const topK = Math.min(query.topK || 12, 30); // Limit to max 30 results
+    return this.productsService.searchByImage(file.buffer, file.originalname, topK);
+  }
+
+  @Post('search/voice')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Search products by voice query' })
+  async searchByVoice(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<VoiceSearchResponseDto> {
+    if (!file) {
+      throw new HttpException('Audio file is required', HttpStatus.BAD_REQUEST);
+    }
+
+    return this.productsService.searchByVoice(file.buffer, file.originalname);
   }
 
   @Get(':id')
