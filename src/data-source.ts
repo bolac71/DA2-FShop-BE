@@ -31,6 +31,8 @@ import {
   Hashtag,
   PostHashtag,
   Notification,
+  Conversation,
+  Message,
 } from './entities';
 
 /**
@@ -76,6 +78,8 @@ export const AppDataSource = new DataSource({
     Hashtag,
     PostHashtag,
     Notification,
+    Conversation,
+    Message,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

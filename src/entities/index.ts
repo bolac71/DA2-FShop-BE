@@ -22,3 +22,5 @@ export { Coupon, CouponRedemption } from '../modules/coupons/entities';
 export { Review, ReviewImage, ReviewVote } from '../modules/reviews/entities';
 export { Post, PostComment, PostImage, PostLike, Hashtag, PostHashtag } from '../modules/posts/entities';
 export { Notification } from '../modules/notifications/entities/notification.entity';
+export { Conversation } from '../modules/chats/entities/conversation.entity';
+export { Message } from '../modules/chats/entities/message.entity';

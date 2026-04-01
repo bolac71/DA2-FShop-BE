@@ -30,6 +30,7 @@ import { PostsModule } from './modules/posts/posts.module';
 import { MinioModule } from './modules/minio/minio.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ChatsModule } from './modules/chats/chats.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     MinioModule,
     BackupModule,
     NotificationsModule,
+    ChatsModule,
   ],
   controllers: [AppController],
   providers: [
