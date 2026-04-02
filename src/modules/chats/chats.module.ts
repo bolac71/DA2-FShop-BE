@@ -6,10 +6,11 @@ import { Conversation } from './entities/conversation.entity';
 import { Message } from './entities/message.entity';
 import { ChatGateway } from './chat.gateway';
 import { ChatsService } from './chats.service';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Conversation, Message]),
+    TypeOrmModule.forFeature([Conversation, Message, User]),
     CloudinaryModule,
   ],
   controllers: [ChatsController],

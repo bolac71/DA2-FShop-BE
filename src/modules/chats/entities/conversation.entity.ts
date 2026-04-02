@@ -11,17 +11,18 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-@Entity()
+@Entity('conversation')
 @Unique(['customer'])
 export class Conversation {
   @PrimaryGeneratedColumn()
   id: number;
 
   @OneToOne(() => User)
-  @JoinColumn()
+  @JoinColumn({ name: 'customer_id' })
   customer: User;
 
   @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'assigned_admin_id' })
   assignedAdmin?: User;
 
   @Column({ default: 'OPEN' })

@@ -1,11 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   Injectable,
-  ForbiddenException,
-  NotFoundException,
-  BadRequestException,
   HttpException,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -26,6 +24,9 @@ export class ChatsService {
     @InjectRepository(Message)
     private readonly msgRepo: Repository<Message>,
 
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+
     private readonly gateway: ChatGateway,
     private readonly cloudinaryService: CloudinaryService,
   ) {}
@@ -34,17 +35,20 @@ export class ChatsService {
   // GET OR CREATE CONVERSATION
   // =========================
   async getOrCreateConversation(user: User) {
+    const currentUser = await this.resolveAuthUser(user);
+
     let convo = await this.convoRepo.findOne({
-      where: { customer: { id: user.id } },
+      where: { customer: { id: currentUser.id } },
       relations: ['customer', 'assignedAdmin'],
     });
 
     if (!convo) {
       convo = this.convoRepo.create({
-        customer: user,
+        customer: currentUser,
         status: 'OPEN',
       });
       await this.convoRepo.save(convo);
+      this.gateway.emitConversationUpdate(convo);
     }
 
     return convo;
@@ -62,6 +66,8 @@ export class ChatsService {
       video?: Express.Multer.File[];
     }
   ) {
+    const currentSender = await this.resolveAuthUser(sender);
+
     // 1. Validate: must have content OR files
     const hasContent = dto.content && dto.content.trim().length > 0;
     const hasFiles = files && (
@@ -83,7 +89,7 @@ export class ChatsService {
     if (!convo) throw new HttpException('Conversation not found', HttpStatus.NOT_FOUND);
 
     // User chỉ được chat trong convo của mình
-    if (sender.role === Role.USER && convo.customer.id !== sender.id) {
+    if (currentSender.role === Role.USER && convo.customer.id !== currentSender.id) {
       throw new HttpException('You are not the owner of this conversation', HttpStatus.FORBIDDEN);
     }
 
@@ -171,8 +177,8 @@ export class ChatsService {
     // 4. Create message
     const message = this.msgRepo.create({
       conversation: convo,
-      sender,
-      senderRole: sender.role,
+      sender: currentSender,
+      senderRole: currentSender.role,
       content: dto.content || null,
       attachments: attachments.length > 0 ? attachments : null,
       isDelivered: true,
@@ -184,12 +190,13 @@ export class ChatsService {
     // 5. Update conversation (existing logic)
     convo.lastMessageAt = new Date();
 
-    if (sender.role === Role.ADMIN) {
+    if (currentSender.role === Role.ADMIN) {
       convo.status = 'HANDLING';
-      convo.assignedAdmin = sender;
+      convo.assignedAdmin = currentSender;
     }
 
     await this.convoRepo.save(convo);
+    this.gateway.emitConversationUpdate(convo);
 
     // 6. Build response DTO
     const messageDto = {
@@ -199,10 +206,10 @@ export class ChatsService {
       attachments: saved.attachments,
       senderRole: saved.senderRole,
       sender: {
-        id: sender.id,
-        fullName: sender.fullName,
-        avatar: sender.avatar,
-        role: sender.role,
+        id: currentSender.id,
+        fullName: currentSender.fullName,
+        avatar: currentSender.avatar,
+        role: currentSender.role,
       },
       isSeen: saved.isSeen,
       createdAt: saved.createdAt,
@@ -264,5 +271,21 @@ export class ChatsService {
       relations: ['customer', 'assignedAdmin'],
       order: { lastMessageAt: 'DESC' },
     });
+  }
+
+  private async resolveAuthUser(userLike: Partial<User> & { sub?: number; userId?: number }): Promise<User> {
+    const rawUserId = userLike?.id ?? userLike?.sub ?? userLike?.userId;
+    const userId = Number(rawUserId);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      throw new UnauthorizedException('Invalid authenticated user payload');
+    }
+
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('Authenticated user not found');
+    }
+
+    return user;
   }
 }

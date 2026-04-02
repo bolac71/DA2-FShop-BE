@@ -4,12 +4,12 @@ import {
   ManyToOne,
   Column,
   CreateDateColumn,
+  JoinColumn,
 } from 'typeorm';
 import { Conversation } from './conversation.entity';
 import { User } from 'src/modules/users/entities/user.entity';
 
 export type AttachmentType = 'image' | 'voice' | 'video';
-
 export interface MessageAttachment {
   type: AttachmentType;
   url: string;
@@ -30,9 +30,11 @@ export class Message {
   id: number;
 
   @ManyToOne(() => Conversation)
+  @JoinColumn({ name: 'conversation_id' })
   conversation: Conversation;
 
   @ManyToOne(() => User)
+  @JoinColumn({ name: 'sender_id' })
   sender: User;
 
   @Column({
@@ -42,10 +44,10 @@ export class Message {
   })
   senderRole: 'user' | 'admin';
 
-  @Column('text', { nullable: true, name: 'content' })
+  @Column('text', { nullable: true })
   content: string | null;
 
-  @Column('jsonb', { nullable: true, name: 'attachments' })
+  @Column('jsonb', { nullable: true })
   attachments: MessageAttachment[] | null;
 
   @Column({ default: false, name: 'is_delivered' })

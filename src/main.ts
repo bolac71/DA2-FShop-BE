@@ -6,6 +6,11 @@ import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const httpServer = app.getHttpServer() as { setTimeout: (timeout: number) => void; requestTimeout?: number; headersTimeout?: number; keepAliveTimeout?: number };
+  httpServer.setTimeout(300000);
+  httpServer.requestTimeout = 300000;
+  httpServer.headersTimeout = 310000;
+  httpServer.keepAliveTimeout = 310000;
   // prefix API
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());
