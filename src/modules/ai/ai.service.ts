@@ -7,6 +7,15 @@ export interface AiChatHistoryItem {
   content: string;
 }
 
+export interface AiChatSessionState {
+  active_product_id?: number | null;
+  active_product_name?: string | null;
+  active_category?: string | null;
+  active_brand?: string | null;
+  last_intent?: string | null;
+  last_entities?: Record<string, unknown>;
+}
+
 export interface AiChatProductItem {
   id: number;
   name: string;
@@ -20,6 +29,7 @@ export interface AiChatProductItem {
 export interface AiChatResponse {
   answer: string;
   products: AiChatProductItem[];
+  session_state?: AiChatSessionState | null;
 }
 
 @Injectable()
@@ -44,6 +54,7 @@ export class AiService {
     question: string,
     history: AiChatHistoryItem[],
     userId: number,
+    sessionState?: AiChatSessionState | null,
   ): Promise<AiChatResponse> {
     const normalizedQuestion = question.trim();
     if (!normalizedQuestion) {
@@ -62,6 +73,7 @@ export class AiService {
           question: normalizedQuestion,
           history,
           user_id: userId,
+          session_state: sessionState ?? null,
         }),
         signal: AbortSignal.timeout(this.aiChatTimeoutMs),
       });
@@ -73,6 +85,7 @@ export class AiService {
       const raw = (await response.json()) as {
         answer?: unknown;
         products?: unknown;
+        session_state?: unknown;
       };
 
       const answer = typeof raw.answer === 'string'
@@ -83,9 +96,14 @@ export class AiService {
         ? (raw.products as AiChatProductItem[])
         : [];
 
+      const parsedSessionState = raw.session_state && typeof raw.session_state === 'object'
+        ? (raw.session_state as AiChatSessionState)
+        : null;
+
       return {
         answer,
         products,
+        session_state: parsedSessionState,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

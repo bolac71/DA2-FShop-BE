@@ -26,6 +26,7 @@ export class AiChatbotService {
       user,
       title,
       isActive: true,
+      state: null,
     });
 
     return this.sessionRepo.save(session);
@@ -97,7 +98,7 @@ export class AiChatbotService {
     const savedUserMessage = await this.messageRepo.save(userMessage);
 
     const startedAt = Date.now();
-    const aiResult = await this.aiService.askChatbot(normalizedMessage, history, userId);
+    const aiResult = await this.aiService.askChatbot(normalizedMessage, history, userId, session.state ?? null);
     const latencyMs = Date.now() - startedAt;
 
     const assistantMessage = this.messageRepo.create({
@@ -111,6 +112,9 @@ export class AiChatbotService {
 
     if (!session.title) {
       session.title = normalizedMessage.slice(0, 80);
+    }
+    if (aiResult.session_state) {
+      session.state = aiResult.session_state as Record<string, unknown>;
     }
     session.lastMessageAt = new Date();
     await this.sessionRepo.save(session);

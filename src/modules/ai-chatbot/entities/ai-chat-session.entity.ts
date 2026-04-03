@@ -21,6 +21,9 @@ export class AiChatSession {
   @Column({ type: 'varchar', length: 120, nullable: true })
   title!: string | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  state!: Record<string, unknown> | null;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 
