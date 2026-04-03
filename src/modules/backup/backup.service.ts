@@ -14,6 +14,7 @@ import { Cron } from '@nestjs/schedule';
 export class BackupService {
   private readonly logger = new Logger(BackupService.name);
   private readonly tempDir: string;
+  private readonly backupFileRegex = /^backup_\d{4}-\d{2}-\d{2}_\d{6}\.dump$/;
 
   constructor(
     private readonly minioService: MinioService,
@@ -43,6 +44,12 @@ export class BackupService {
 
   private runCommand(command: string): void {
     execSync(command, { stdio: 'pipe' });
+  }
+
+  private ensureValidBackupFilename(filename: string): void {
+    if (!this.backupFileRegex.test(filename)) {
+      throw new HttpException('Invalid backup filename format', HttpStatus.BAD_REQUEST);
+    }
   }
 
   async createBackup() {
@@ -101,7 +108,11 @@ export class BackupService {
         createdAt: new Date(),
         status: 'success',
       };
-    } catch (error) {
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.logger.error(`Backup failed: ${error.message}`, error.stack);
 
       // Clean up temp file if exists
@@ -131,13 +142,15 @@ export class BackupService {
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
       return backups;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Failed to list backups: ${error.message}`);
       throw new HttpException('Failed to list backups', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   async restoreBackup(filename: string) {
+    this.ensureValidBackupFilename(filename);
+
     const tempFilePath = path.join(this.tempDir, filename);
 
     const dbUsername = this.configService.get<string>('DB_USERNAME');
@@ -168,7 +181,7 @@ export class BackupService {
       try {
         this.runCommand(terminateConnectionsCommand);
         this.logger.log('Active database connections terminated');
-      } catch (error) {
+      } catch (error: any) {
         this.logger.warn(
           `Failed to terminate connections (this is OK if no active connections): ${error.message}`,
         );
@@ -201,7 +214,11 @@ export class BackupService {
       fs.unlinkSync(tempFilePath);
 
       this.logger.log(`Temp file cleaned up: ${tempFilePath}`);
-    } catch (error) {
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       this.logger.error(`Restore failed: ${error.message}`, error.stack);
 
       // Clean up temp file if exists
@@ -209,18 +226,23 @@ export class BackupService {
         fs.unlinkSync(tempFilePath);
       }
 
-      throw new HttpException(`Database restore failed: ${error.message}`, HttpStatus.BAD_REQUEST); 
+      throw new HttpException(
+        `Database restore failed: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
   async deleteBackup(filename: string) {
+    this.ensureValidBackupFilename(filename);
+
     try {
       this.logger.log(`Deleting backup: ${filename}`);
 
       await this.minioService.deleteFile(filename);
 
       this.logger.log(`Backup deleted successfully: ${filename}`);
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof HttpException && error.getStatus() === HttpStatus.NOT_FOUND) {
         throw error;
       }
@@ -231,6 +253,8 @@ export class BackupService {
   }
 
   async getBackupInfo(filename: string) {
+    this.ensureValidBackupFilename(filename);
+
     try {
       const stat = await this.minioService.getFileStat(filename);
       const downloadUrl = await this.minioService.getFileUrl(filename, 3600);
@@ -242,7 +266,7 @@ export class BackupService {
         status: 'success',
         downloadUrl,
       };
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof HttpException && error.getStatus() === HttpStatus.NOT_FOUND) {
         throw error;
       }
@@ -264,7 +288,7 @@ export class BackupService {
       this.logger.log(
         `Scheduled backup completed successfully: ${backup.filename} (${backup.size} bytes)`,
       );
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Scheduled backup failed: ${error.message}`);
     }
   }

@@ -6,13 +6,19 @@ import {
   Param,
   UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BackupService } from './backup.service';
 import { BackupResponseDto } from './dtos';
-import { BackupMetadata } from './interfaces/backup-metadata.interface';
+import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from 'src/constants';
 
 @ApiTags('Backup')
 @Controller('backup')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
+@ApiBearerAuth()
 export class BackupController {
   constructor(private readonly backupService: BackupService) {}
 
