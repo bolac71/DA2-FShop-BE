@@ -11,6 +11,8 @@ import { ActorRole, ensureTransitionAllowed } from 'src/utils/order-status.rules
 import { InventoriesModule } from '../inventories/inventories.module';
 import { InventoriesService } from '../inventories/inventories.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Livestream, LivestreamOrder } from '../livestreams/entities';
+import { LivestreamStatus } from 'src/constants/livestream-status.enum';
 
 @Injectable()
 export class OrdersService {
@@ -97,6 +99,23 @@ export class OrdersService {
     const createdOrder = await this.dataSource.manager.transaction(async (manager) => {
       // Implementation for creating order within a transaction
       const { addressId, couponId, note, shippingMethod, items } = createOrderDto;
+
+      if (createOrderDto.livestreamId) {
+        const livestream = await manager.findOne(Livestream, {
+          where: {
+            id: createOrderDto.livestreamId,
+            isActive: true,
+            status: LivestreamStatus.LIVE,
+          },
+        });
+
+        if (!livestream) {
+          throw new HttpException(
+            'Livestream not found or is not live',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
 
       // Validate user and address
       const user = await manager.findOne(User, { where: { id: userId } });
@@ -247,6 +266,14 @@ export class OrdersService {
 
       order.totalAmount = Math.max(0, subtotal + shippingFee - discountAmount);
       await manager.save(order);
+
+      if (createOrderDto.livestreamId) {
+        const livestreamOrder = manager.create(LivestreamOrder, {
+          livestreamId: createOrderDto.livestreamId,
+          orderId: order.id,
+        });
+        await manager.save(livestreamOrder);
+      }
 
       
       return order

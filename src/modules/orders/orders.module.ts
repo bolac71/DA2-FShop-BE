@@ -6,6 +6,7 @@ import { Order, OrderItem } from './entities';
 import { CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, ProductVariant, User } from 'src/entities';
 import { InventoriesModule } from '../inventories/inventories.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { Livestream, LivestreamOrder } from '../livestreams/entities';
 
 @Module({
   imports: [
@@ -19,6 +20,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
       CartItem,
       Coupon,
       CouponRedemption,
+      Livestream,
+      LivestreamOrder,
     ]),
     InventoriesModule,
     NotificationsModule

@@ -25,3 +25,9 @@ export { Notification } from '../modules/notifications/entities/notification.ent
 export { Conversation } from '../modules/chats/entities/conversation.entity';
 export { Message } from '../modules/chats/entities/message.entity';
 export { AiChatSession, AiChatMessage } from '../modules/ai-chatbot/entities';
+export {
+	Livestream,
+	LivestreamComment,
+	LivestreamProduct,
+	LivestreamOrder,
+} from '../modules/livestreams/entities';

@@ -35,6 +35,10 @@ import {
   Message,
   AiChatSession,
   AiChatMessage,
+  Livestream,
+  LivestreamComment,
+  LivestreamProduct,
+  LivestreamOrder,
 } from './entities';
 
 /**
@@ -84,6 +88,10 @@ export const AppDataSource = new DataSource({
     Message,
     AiChatSession,
     AiChatMessage,
+    Livestream,
+    LivestreamComment,
+    LivestreamProduct,
+    LivestreamOrder,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

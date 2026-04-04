@@ -10,6 +10,9 @@ export class CreateOrderDto {
   addressId: number
 
   @NumberOptional()
+  livestreamId?: number
+
+  @NumberOptional()
   couponId?: number
 
   @StringOptional()
