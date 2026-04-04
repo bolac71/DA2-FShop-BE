@@ -1,9 +1,14 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Notification, User } from 'src/entities';
-import { MoreThan, Repository } from 'typeorm';
+import { ILike, MoreThan, Repository } from 'typeorm';
 import { NotificationGateway } from './notifications.gateway';
-import { CreateNotificationDto, QueryNotificationDto } from './dtos';
+import {
+  AdminQueryNotificationDto,
+  CreateAdminBroadcastDto,
+  CreateNotificationDto,
+  QueryNotificationDto,
+} from './dtos';
 
 @Injectable()
 export class NotificationsService {
@@ -85,6 +90,62 @@ export class NotificationsService {
     );
 
     return totalInserted;
+  }
+
+  async createAdminBroadcast(payload: CreateAdminBroadcastDto, adminId: number) {
+    const inserted = await this.createForAllActiveUsers(payload);
+
+    this.notiGateway.emitAdminNotificationCreated({
+      ...payload,
+      totalRecipients: inserted,
+      createdBy: adminId,
+      createdAt: new Date(),
+    });
+
+    return {
+      success: true,
+      totalRecipients: inserted,
+    };
+  }
+
+  async getAdminNotifications(query: AdminQueryNotificationDto) {
+    const {
+      page,
+      limit,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'DESC',
+      type,
+      isRead,
+    } = query;
+
+    const baseWhere = {
+      ...(type && { type }),
+      ...(isRead !== undefined && { isRead }),
+    };
+
+    const where = search
+      ? [
+          { ...baseWhere, title: ILike(`%${search}%`) },
+          { ...baseWhere, message: ILike(`%${search}%`) },
+        ]
+      : baseWhere;
+
+    const [data, total] = await this.notificationRepository.findAndCount({
+      where,
+      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
+      order: { [sortBy]: sortOrder },
+      relations: ['user'],
+    });
+
+    return {
+      pagination: {
+        total,
+        page,
+        limit,
+      },
+      data,
+    };
   }
 
   async getMyNotifications(userId: number, query: QueryNotificationDto) {

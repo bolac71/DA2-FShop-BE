@@ -1,12 +1,38 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
-import { CreateNotificationDto, QueryNotificationDto } from './dtos';
+import {
+  AdminQueryNotificationDto,
+  CreateAdminBroadcastDto,
+  QueryNotificationDto,
+} from './dtos';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
-import { ApiBasicAuth, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from 'src/constants';
 
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('admin')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all notifications for admin dashboard' })
+  getAdminNotifications(@Query() query: AdminQueryNotificationDto) {
+    return this.notificationsService.getAdminNotifications(query);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('admin/broadcast')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create and send broadcast notification to active users' })
+  createAdminBroadcast(@Req() req: Request, @Body() dto: CreateAdminBroadcastDto) {
+    const { sub } = req['user'];
+    return this.notificationsService.createAdminBroadcast(dto, sub);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
