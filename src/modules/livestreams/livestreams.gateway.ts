@@ -128,8 +128,10 @@ export class LivestreamsGateway implements OnGatewayConnection, OnGatewayDisconn
     const dto: CreateLivestreamCommentDto = { content: body.content };
     const comment = await this.livestreamService.addComment(livestreamId, userId, dto);
 
-    this.server
-      .to(`livestream-${livestreamId}`)
-      .emit('newLivestreamComment', comment);
+    this.emitNewComment(livestreamId, comment);
+  }
+
+  emitNewComment(livestreamId: number, comment: unknown) {
+    this.server.to(`livestream-${livestreamId}`).emit('newLivestreamComment', comment);
   }
 }

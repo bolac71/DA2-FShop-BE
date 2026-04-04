@@ -27,10 +27,14 @@ import {
   UpdateLivestreamDto,
 } from './dtos';
 import { LivestreamsService } from './livestreams.service';
+import { LivestreamsGateway } from './livestreams.gateway';
 
 @Controller('livestreams')
 export class LivestreamsController {
-  constructor(private readonly livestreamsService: LivestreamsService) {}
+  constructor(
+    private readonly livestreamsService: LivestreamsService,
+    private readonly livestreamsGateway: LivestreamsGateway,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -144,7 +148,10 @@ export class LivestreamsController {
     @Body() dto: CreateLivestreamCommentDto,
   ) {
     const { sub } = req['user'];
-    return this.livestreamsService.addComment(id, sub, dto);
+    return this.livestreamsService.addComment(id, sub, dto).then((comment) => {
+      this.livestreamsGateway.emitNewComment(id, comment);
+      return comment;
+    });
   }
 
   @Get(':id/agora-token')

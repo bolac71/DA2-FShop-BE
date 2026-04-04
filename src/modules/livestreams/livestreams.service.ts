@@ -182,7 +182,7 @@ export class LivestreamsService {
     livestream.viewerCount = viewerCount;
     livestream.totalViewers = Math.max(livestream.totalViewers, viewerCount);
 
-    await this.redis.del(this.viewerKey(livestreamId));
+    await this.clearViewerTracking(livestreamId);
     return this.livestreamRepository.save(livestream);
   }
 
@@ -222,7 +222,12 @@ export class LivestreamsService {
   async findOne(livestreamId: number) {
     const livestream = await this.livestreamRepository.findOne({
       where: { id: livestreamId, isActive: true },
-      relations: ['host', 'pinnedProducts', 'pinnedProducts.product'],
+      relations: [
+        'host',
+        'pinnedProducts',
+        'pinnedProducts.product',
+        'pinnedProducts.product.images',
+      ],
     });
     if (!livestream) {
       throw new HttpException('Livestream not found', HttpStatus.NOT_FOUND);
@@ -282,11 +287,11 @@ export class LivestreamsService {
 
   async getComments(livestreamId: number, query: QueryLivestreamDto) {
     await this.ensureLivestreamExists(livestreamId);
-    const { page, limit } = query;
+    const { page, limit, sortOrder = 'DESC' } = query;
     const [data, total] = await this.livestreamCommentRepository.findAndCount({
       where: { livestreamId, isActive: true },
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { createdAt: 'DESC' },
+      order: { createdAt: sortOrder },
       relations: ['user'],
     });
 
@@ -316,7 +321,18 @@ export class LivestreamsService {
       isActive: true,
       likeCount: 0,
     });
-    return this.livestreamCommentRepository.save(comment);
+    const savedComment = await this.livestreamCommentRepository.save(comment);
+
+    const hydratedComment = await this.livestreamCommentRepository.findOne({
+      where: { id: savedComment.id },
+      relations: ['user'],
+    });
+
+    if (!hydratedComment) {
+      throw new HttpException('Comment not found', HttpStatus.NOT_FOUND);
+    }
+
+    return hydratedComment;
   }
 
   async issueAgoraToken(livestreamId: number, userId: number) {
@@ -360,12 +376,21 @@ export class LivestreamsService {
 
   async addViewer(livestreamId: number, userId: number, socketId: string) {
     await this.ensureLivestreamExists(livestreamId);
-    await this.redis.sadd(this.viewerKey(livestreamId), `${userId}:${socketId}`);
+    await this.redis.sadd(this.viewerSocketKey(livestreamId, userId), socketId);
+    await this.redis.sadd(this.viewerKey(livestreamId), String(userId));
     await this.syncViewerCount(livestreamId);
   }
 
   async removeViewer(livestreamId: number, userId: number, socketId: string) {
-    await this.redis.srem(this.viewerKey(livestreamId), `${userId}:${socketId}`);
+    const socketKey = this.viewerSocketKey(livestreamId, userId);
+    await this.redis.srem(socketKey, socketId);
+
+    const activeSockets = await this.redis.scard(socketKey);
+    if (activeSockets <= 0) {
+      await this.redis.del(socketKey);
+      await this.redis.srem(this.viewerKey(livestreamId), String(userId));
+    }
+
     await this.syncViewerCount(livestreamId);
   }
 
@@ -432,13 +457,46 @@ export class LivestreamsService {
     return `livestream:${livestreamId}:viewers`;
   }
 
+  private viewerSocketKey(livestreamId: number, userId: number) {
+    return `livestream:${livestreamId}:viewer-sockets:${userId}`;
+  }
+
   private async syncViewerCount(livestreamId: number) {
     const viewerCount = await this.getViewerCount(livestreamId);
+    const livestream = await this.livestreamRepository.findOne({
+      where: { id: livestreamId },
+      select: { totalViewers: true },
+    });
+
+    const totalViewers = Math.max(livestream?.totalViewers ?? 0, viewerCount);
+
     await this.livestreamRepository.update(
       { id: livestreamId },
-      { viewerCount, totalViewers: viewerCount },
+      { viewerCount, totalViewers },
     );
     return viewerCount;
+  }
+
+  private async clearViewerTracking(livestreamId: number) {
+    await this.redis.del(this.viewerKey(livestreamId));
+
+    let cursor = '0';
+    const pattern = `livestream:${livestreamId}:viewer-sockets:*`;
+
+    do {
+      const [nextCursor, keys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        '100',
+      );
+      cursor = nextCursor;
+
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+    } while (cursor !== '0');
   }
 
   private assertUploadedFile(
