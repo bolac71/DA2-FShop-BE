@@ -1,6 +1,6 @@
 import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, EntityManager, ILike, In, Repository } from 'typeorm';
+import { Brackets, DataSource, EntityManager, ILike, In, IsNull, Repository } from 'typeorm';
 import { Hashtag, PostComment, PostHashtag, PostImage, PostLike, Post } from './entities';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
@@ -491,7 +491,7 @@ export class PostsService {
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
 
     const [data, total] = await this.postCommentRepository.findAndCount({
-      where: {postId, isActive: true},
+      where: { postId, isActive: true, parentComment: IsNull() },
       relations: ['user'],
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },
@@ -596,6 +596,11 @@ export class PostsService {
         relations: ['post', 'post.user', 'user'],
       });
       if (!parentComment) throw new HttpException('Parent comment not found', HttpStatus.NOT_FOUND);
+
+      // Check if we've reached max nesting depth (3 levels max: depth 0, 1, 2)
+      if (parentComment.depth >= 2) {
+        throw new HttpException('Cannot reply to comments nested deeper than 2 levels', HttpStatus.BAD_REQUEST);
+      }
 
       // 2. Check user
       const user = await manager.findOne(User, { where: { id: userId } });
