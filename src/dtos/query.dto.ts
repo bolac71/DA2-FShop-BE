@@ -14,6 +14,9 @@ export class QueryDto {
     search?: string;
 
     @StringOptional()
+    hashtag?: string;
+
+    @StringOptional()
     sortBy?: string;
     
     @IsOptional()

@@ -1,6 +1,6 @@
 import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, ILike, In, Repository } from 'typeorm';
+import { Brackets, DataSource, EntityManager, ILike, In, Repository } from 'typeorm';
 import { Hashtag, PostComment, PostHashtag, PostImage, PostLike, Post } from './entities';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
@@ -344,17 +344,37 @@ export class PostsService {
   }
 
   async findAll(query: QueryDto, currentUserId?: number) {
-    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
-    const [data, total] = await this.postRepository.findAndCount({
-      where: search
-        ? [
-            { isActive: true, content: ILike(`%${search}%`) },
-          ]
-        : { isActive: true },
-      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { [sortBy]: sortOrder },
-      relations: ['user', 'images', 'postHashtags', 'postHashtags.hashtag'],
-    });
+    const { page, limit, search, hashtag, sortBy = 'id', sortOrder = 'DESC' } = query;
+
+    const queryBuilder = this.postRepository
+      .createQueryBuilder('post')
+      .leftJoinAndSelect('post.user', 'user')
+      .leftJoinAndSelect('post.images', 'images')
+      .leftJoinAndSelect('post.postHashtags', 'postHashtags')
+      .leftJoinAndSelect('postHashtags.hashtag', 'hashtag')
+      .where('post.isActive = :isActive', { isActive: true })
+      .distinct(true);
+
+    if (search?.trim()) {
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          qb.where('post.content ILIKE :search', { search: `%${search.trim()}%` })
+            .orWhere('hashtag.name ILIKE :search', { search: `%${search.trim()}%` });
+        }),
+      );
+    }
+
+    if (hashtag?.trim()) {
+      queryBuilder.andWhere('hashtag.name ILIKE :hashtag', { hashtag: `%${hashtag.trim()}%` });
+    }
+
+    queryBuilder.orderBy(`post.${sortBy}`, sortOrder);
+
+    if (page && limit) {
+      queryBuilder.skip((page - 1) * limit).take(limit);
+    }
+
+    const [data, total] = await queryBuilder.getManyAndCount();
 
     const likedPostIds = currentUserId && data.length > 0
       ? new Set(
