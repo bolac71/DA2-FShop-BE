@@ -343,7 +343,7 @@ export class PostsService {
     });
   }
 
-  async findAll(query: QueryDto) {
+  async findAll(query: QueryDto, currentUserId?: number) {
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
     const [data, total] = await this.postRepository.findAndCount({
       where: search
@@ -355,25 +355,47 @@ export class PostsService {
       order: { [sortBy]: sortOrder },
       relations: ['user', 'images', 'postHashtags', 'postHashtags.hashtag'],
     });
+
+    const likedPostIds = currentUserId && data.length > 0
+      ? new Set(
+          (
+            await this.postLikeRepository.find({
+              where: { userId: currentUserId, postId: In(data.map((post) => post.id)) },
+            })
+          ).map((like) => like.postId),
+        )
+      : new Set<number>();
+
     const response = {
       pagination: {
         total,
         page,
         limit,
       },
-      data,
+      data: data.map((post) => ({
+        ...post,
+        isLiked: likedPostIds.has(post.id),
+      })),
     };
     console.log('data lay tu DB');
     return response;
   }
 
-  async findById(id: number) {
+  async findById(id: number, currentUserId?: number) {
     const post = await this.postRepository.findOne({
       where: { id, isActive: true },
       relations: ['user', 'images', 'postHashtags', 'postHashtags.hashtag', 'likes', 'comments'],
     });
     if (!post) throw new HttpException('Not found post', HttpStatus.NOT_FOUND);
-    return post;
+
+    const isLiked = currentUserId
+      ? await this.postLikeRepository.exist({ where: { postId: id, userId: currentUserId } })
+      : false;
+
+    return {
+      ...post,
+      isLiked,
+    };
   }
 
   async toggleLike(postId: number, userId: number) {

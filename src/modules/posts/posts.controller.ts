@@ -5,6 +5,7 @@ import { PostsService } from './posts.service';
 import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
 import { QueryDto } from 'src/dtos';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from 'src/guards/optional-jwt-auth.guard';
 
 @ApiTags('Posts')
 @Controller('posts')
@@ -58,17 +59,21 @@ export class PostsController {
   }
 
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get()
   @ApiOperation({ summary: 'Get all posts' })
-  findAll(@Query() query: QueryDto) {
-    return this.postsService.findAll(query);
+  findAll(@Req() request: Request, @Query() query: QueryDto) {
+    const currentUserId = request['user']?.sub;
+    return this.postsService.findAll(query, currentUserId);
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
   @ApiNotFoundResponse({ description: 'Post not found' })
   @ApiOperation({ summary: 'Get a post by id' })
-  findOne(@Param('id') id: number) {
-    return this.postsService.findById(id);
+  findOne(@Req() request: Request, @Param('id') id: number) {
+    const currentUserId = request['user']?.sub;
+    return this.postsService.findById(id, currentUserId);
   }
 
   @UseGuards(JwtAuthGuard)
