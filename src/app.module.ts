@@ -33,6 +33,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { ChatsModule } from './modules/chats/chats.module';
 import { AiChatbotModule } from './modules/ai-chatbot/ai-chatbot.module';
 import { LivestreamsModule } from './modules/livestreams/livestreams.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { LivestreamsModule } from './modules/livestreams/livestreams.module';
     ChatsModule,
     LivestreamsModule,
     AiChatbotModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [
