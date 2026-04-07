@@ -650,6 +650,38 @@ export class PostsService {
     });
   }
 
+  async deleteCommentAsAdmin(postId: number, commentId: number) {
+    return await this.dataSource.transaction(async (manager) => {
+      const comment = await manager.findOne(PostComment, {
+        where: { id: commentId, post: { id: postId } },
+        relations: ['post', 'parentComment'],
+      });
+
+      if (!comment) throw new HttpException('Comment not found', HttpStatus.NOT_FOUND);
+
+      const post = comment.post;
+      const parentComment = comment.parentComment;
+
+      const descendantsCount = await this.countTotalDescendants(comment.id, manager);
+      const totalToDelete = 1 + descendantsCount;
+
+      if (parentComment) {
+        parentComment.replyCount = Math.max(0, parentComment.replyCount - 1);
+        await manager.save(parentComment);
+      }
+
+      await manager.remove(comment);
+
+      post.totalComments = Math.max(0, post.totalComments - totalToDelete);
+      await manager.save(post);
+
+      return {
+        message: 'Comment deleted successfully',
+        deletedCount: totalToDelete,
+      };
+    });
+  }
+
   async addReply(postId: number, commentId: number, userId: number, dto: CreateCommentDto) {
     return await this.dataSource.transaction(async (manager) => {
       // 1. Check parent comment

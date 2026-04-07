@@ -152,6 +152,19 @@ export class PostsController {
     return this.postsService.deleteComment(postId, commentId, sub);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete('admin/:postId/comments/:commentId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: Delete any comment' })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  deleteCommentAsAdmin(
+    @Param('postId', ParseIntPipe) postId: number,
+    @Param('commentId', ParseIntPipe) commentId: number,
+  ) {
+    return this.postsService.deleteCommentAsAdmin(postId, commentId);
+  }
+
 
   @UseGuards(JwtAuthGuard)
   @Post(':postId/comments/:commentId/replies')
