@@ -401,6 +401,68 @@ export class PostsService {
     return response;
   }
 
+  async findAllAdmin(query: QueryDto) {
+    const { page, limit, search, hashtag, sortBy = 'id', sortOrder = 'DESC' } = query;
+
+    const queryBuilder = this.postRepository
+      .createQueryBuilder('post')
+      .leftJoinAndSelect('post.user', 'user')
+      .leftJoinAndSelect('post.images', 'images')
+      .leftJoinAndSelect('post.postHashtags', 'postHashtags')
+      .leftJoinAndSelect('postHashtags.hashtag', 'hashtag')
+      .distinct(true);
+
+    if (search?.trim()) {
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          qb.where('post.content ILIKE :search', { search: `%${search.trim()}%` })
+            .orWhere('hashtag.name ILIKE :search', { search: `%${search.trim()}%` })
+            .orWhere('user.fullName ILIKE :search', { search: `%${search.trim()}%` })
+            .orWhere('user.email ILIKE :search', { search: `%${search.trim()}%` });
+        }),
+      );
+    }
+
+    if (hashtag?.trim()) {
+      queryBuilder.andWhere('hashtag.name ILIKE :hashtag', { hashtag: `%${hashtag.trim()}%` });
+    }
+
+    queryBuilder.orderBy(`post.${sortBy}`, sortOrder);
+
+    if (page && limit) {
+      queryBuilder.skip((page - 1) * limit).take(limit);
+    }
+
+    const [data, total] = await queryBuilder.getManyAndCount();
+
+    return {
+      pagination: {
+        total,
+        page,
+        limit,
+      },
+      data,
+    };
+  }
+
+  async updatePostStatus(postId: number, isActive: boolean) {
+    const post = await this.postRepository.findOne({
+      where: { id: postId },
+    });
+
+    if (!post) {
+      throw new HttpException('Post not found', HttpStatus.NOT_FOUND);
+    }
+
+    post.isActive = isActive;
+    await this.postRepository.save(post);
+
+    return {
+      message: isActive ? 'Post restored successfully' : 'Post hidden successfully',
+      data: post,
+    };
+  }
+
   async findById(id: number, currentUserId?: number) {
     const post = await this.postRepository.findOne({
       where: { id, isActive: true },

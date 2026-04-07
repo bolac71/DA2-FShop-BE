@@ -6,6 +6,9 @@ import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
 import { QueryDto } from 'src/dtos';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from 'src/guards/optional-jwt-auth.guard';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from 'src/constants';
 
 @ApiTags('Posts')
 @Controller('posts')
@@ -65,6 +68,28 @@ export class PostsController {
   findAll(@Req() request: Request, @Query() query: QueryDto) {
     const currentUserId = request['user']?.sub;
     return this.postsService.findAll(query, currentUserId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @Get('admin')
+  @ApiOperation({ summary: 'Admin: Get all posts including inactive ones' })
+  findAllAdmin(@Query() query: QueryDto) {
+    return this.postsService.findAllAdmin(query);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @Patch('admin/:id/status')
+  @ApiOperation({ summary: 'Admin: Update post visibility status' })
+  @ApiNotFoundResponse({ description: 'Post not found' })
+  updatePostStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { isActive: boolean },
+  ) {
+    return this.postsService.updatePostStatus(id, body.isActive);
   }
 
   @UseGuards(OptionalJwtAuthGuard)
