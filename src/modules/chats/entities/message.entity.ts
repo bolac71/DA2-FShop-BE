@@ -9,11 +9,22 @@ import {
 import { Conversation } from './conversation.entity';
 import { User } from 'src/modules/users/entities/user.entity';
 
-export type AttachmentType = 'image' | 'voice' | 'video';
+export type AttachmentType = 'image' | 'voice' | 'video' | 'product';
+
+export type ProductAttachment = {
+  id: number;
+  name: string;
+  price: number;
+  imageUrl?: string | null;
+  brandName?: string | null;
+  categoryName?: string | null;
+  department?: string | null;
+};
+
 export interface MessageAttachment {
   type: AttachmentType;
-  url: string;
-  publicId: string;
+  url?: string;
+  publicId?: string;
   fileName?: string;
   fileSize?: number;
   duration?: number;
@@ -22,6 +33,7 @@ export interface MessageAttachment {
     height: number;
   };
   format?: string;
+  product?: ProductAttachment;
 }
 
 @Entity('messages')

@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { Message, MessageAttachment } from './entities/message.entity';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -14,6 +14,7 @@ import { ChatGateway } from './chat.gateway';
 import { User } from 'src/modules/users/entities/user.entity';
 import { Role } from 'src/constants';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { Product } from '../products/entities/product.entity';
 
 @Injectable()
 export class ChatsService {
@@ -26,6 +27,9 @@ export class ChatsService {
 
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
 
     private readonly gateway: ChatGateway,
     private readonly cloudinaryService: CloudinaryService,
@@ -75,8 +79,9 @@ export class ChatsService {
       (files.voice && files.voice.length > 0) ||
       (files.video && files.video.length > 0)
     );
+    const hasProducts = Array.isArray(dto.productIds) && dto.productIds.length > 0;
 
-    if (!hasContent && !hasFiles) {
+    if (!hasContent && !hasFiles && !hasProducts) {
       throw new HttpException('Message must have content or attachments', HttpStatus.BAD_REQUEST);
     }
 
@@ -97,6 +102,35 @@ export class ChatsService {
     const attachments: MessageAttachment[] = [];
 
     try {
+      if (hasProducts) {
+        const products = await this.productRepo.find({
+          where: { id: In(dto.productIds ?? []) },
+          relations: ['brand', 'category', 'images'],
+        });
+
+        const productMap = new Map(products.map((product) => [product.id, product]));
+
+        (dto.productIds ?? []).forEach((productId) => {
+          const product = productMap.get(productId);
+          if (!product) {
+            return;
+          }
+
+          attachments.push({
+            type: 'product',
+            product: {
+              id: product.id,
+              name: product.name,
+              price: Number(product.price),
+              imageUrl: product.images?.[0]?.imageUrl ?? null,
+              brandName: product.brand?.name ?? null,
+              categoryName: product.category?.name ?? null,
+              department: product.category?.department ?? null,
+            },
+          });
+        });
+      }
+
       // Upload images
       if (files && files.images && files.images.length > 0) {
         const uploads = await Promise.all(
