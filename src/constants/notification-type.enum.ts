@@ -1,0 +1,8 @@
+export enum NotificationType {
+  DISCOUNT = 'DISCOUNT',
+  ORDER = 'ORDER',
+  REVIEW = 'REVIEW',
+  POST = 'POST',
+  LIVESTREAM = 'LIVESTREAM',
+  ADMIN_BROADCAST = 'ADMIN_BROADCAST',
+}
