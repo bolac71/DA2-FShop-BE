@@ -87,6 +87,12 @@ Check out a few resources that may come in handy when working with NestJS:
 
 Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
 
+## Email SMTP
+
+Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and optionally `SMTP_FROM` before using forgot-password emails.
+
+If you use Gmail, `SMTP_PASS` must be a Gmail app password, not your normal account password. The forgot-password API now returns an error when SMTP verification or delivery fails, so you can see the real configuration problem instead of a false success.
+
 ## Stay in touch
 
 - Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)

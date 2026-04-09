@@ -11,9 +11,15 @@ import { LoginDto, GoogleLoginDto } from './dtos';
 import { ChangePasswordDto } from './dtos/change-password.dto';
 import { UpdateMeDto } from './dtos/update-me.dto';
 import { GoogleOAuthUtil, GoogleProfile } from 'src/utils/google-oauth.util';
+import { ForgotPasswordRequestDto } from './dtos/forgot-password-request.dto';
+import { ForgotPasswordVerifyDto } from './dtos/forgot-password-verify.dto';
+import { ForgotPasswordResetDto } from './dtos/forgot-password-reset.dto';
+import nodemailer from 'nodemailer';
 
 @Injectable()
 export class AuthService {
+  private static readonly FORGOT_PASSWORD_CODE_TTL_SECONDS = 10 * 60;
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -21,6 +27,59 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly googleOAuthUtil: GoogleOAuthUtil,
   ) {}
+
+  private getForgotPasswordCodeKey(email: string) {
+    return `forgot_password:code:${email.toLowerCase()}`;
+  }
+
+  private getForgotPasswordVerifiedKey(email: string) {
+    return `forgot_password:verified:${email.toLowerCase()}`;
+  }
+
+  private generateVerificationCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private async sendForgotPasswordEmail(email: string, code: string) {
+    const host = this.configService.get<string>('SMTP_HOST');
+    const port = Number(this.configService.get<string>('SMTP_PORT', '587'));
+    const user = this.configService.get<string>('SMTP_USER');
+    const pass = this.configService.get<string>('SMTP_PASS');
+    const from = this.configService.get<string>('SMTP_FROM', user ?? 'no-reply@fshop.local');
+
+    if (!host || !user || !pass) {
+      throw new HttpException('Email service is not configured', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+    });
+
+    try {
+      await transporter.verify();
+      await transporter.sendMail({
+        from,
+        to: email,
+        subject: 'FShop - Ma xac thuc quen mat khau',
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #0f172a;">
+            <h2 style="margin: 0 0 12px;">Yeu cau dat lai mat khau</h2>
+            <p>Ban vua yeu cau dat lai mat khau cho tai khoan FShop.</p>
+            <p>Ma xac thuc cua ban la:</p>
+            <div style="font-size: 28px; font-weight: 700; letter-spacing: 6px; margin: 12px 0;">${code}</div>
+            <p>Ma co hieu luc trong 10 phut.</p>
+            <p>Neu ban khong yeu cau dat lai mat khau, vui long bo qua email nay.</p>
+          </div>
+        `,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown email sending error';
+      throw new HttpException(`Failed to send verification email: ${errorMessage}`, HttpStatus.BAD_GATEWAY);
+    }
+  }
 
   private generateAccessToken(userId: number, email: string, role: Role, cartId?: number): string {
     return this.jwtService.sign({ sub: userId, email, role, ...(cartId && { cartId }) });
@@ -194,6 +253,87 @@ export class AuthService {
 
     // Invalidate refresh token to force re-login on all devices
     await this.redis.del(`refresh_token:${userId}`);
+  }
+
+  async requestForgotPassword(dto: ForgotPasswordRequestDto) {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.usersService.findByEmail(email).catch(() => null);
+
+    // Always return success message to avoid leaking account existence.
+    if (!user || !user.isActive) {
+      return { message: 'If the email exists, a verification code has been sent' };
+    }
+
+    const code = this.generateVerificationCode();
+    await this.redis.set(
+      this.getForgotPasswordCodeKey(email),
+      code,
+      'EX',
+      AuthService.FORGOT_PASSWORD_CODE_TTL_SECONDS,
+    );
+
+    await this.redis.del(this.getForgotPasswordVerifiedKey(email));
+    try {
+      await this.sendForgotPasswordEmail(email, code);
+    } catch (error) {
+      await this.redis.del(this.getForgotPasswordCodeKey(email));
+      await this.redis.del(this.getForgotPasswordVerifiedKey(email));
+      // eslint-disable-next-line no-console
+      console.warn(`[forgot-password] SMTP failed for ${email}; verification code: ${code}`);
+      throw error;
+    }
+
+    return { message: 'If the email exists, a verification code has been sent' };
+  }
+
+  async verifyForgotPasswordCode(dto: ForgotPasswordVerifyDto) {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.usersService.findByEmail(email).catch(() => null);
+    if (!user || !user.isActive) {
+      throw new HttpException('Invalid email or verification code', HttpStatus.BAD_REQUEST);
+    }
+
+    const storedCode = await this.redis.get(this.getForgotPasswordCodeKey(email));
+    if (!storedCode || storedCode !== dto.code.trim()) {
+      throw new HttpException('Invalid email or verification code', HttpStatus.BAD_REQUEST);
+    }
+
+    await this.redis.set(
+      this.getForgotPasswordVerifiedKey(email),
+      '1',
+      'EX',
+      AuthService.FORGOT_PASSWORD_CODE_TTL_SECONDS,
+    );
+
+    return { message: 'Verification code is valid' };
+  }
+
+  async resetForgotPassword(dto: ForgotPasswordResetDto) {
+    const email = dto.email.trim().toLowerCase();
+    const code = dto.code.trim();
+
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new HttpException('New password and confirm password do not match', HttpStatus.BAD_REQUEST);
+    }
+
+    const user = await this.usersService.findByEmail(email).catch(() => null);
+    if (!user || !user.isActive) {
+      throw new HttpException('Invalid reset request', HttpStatus.BAD_REQUEST);
+    }
+
+    const storedCode = await this.redis.get(this.getForgotPasswordCodeKey(email));
+    if (!storedCode || storedCode !== code) {
+      throw new HttpException('Invalid reset request', HttpStatus.BAD_REQUEST);
+    }
+
+    const hashed = await hashPassword(dto.newPassword);
+    await this.usersService.updatePassword(user.id, hashed);
+
+    await this.redis.del(`refresh_token:${user.id}`);
+    await this.redis.del(this.getForgotPasswordCodeKey(email));
+    await this.redis.del(this.getForgotPasswordVerifiedKey(email));
+
+    return { message: 'Password has been reset successfully' };
   }
 
   getCookieOptions() {
