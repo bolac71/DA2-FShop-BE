@@ -1,8 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import {
   AdminQueryNotificationDto,
-  CreateAdminBroadcastDto,
   QueryNotificationDto,
 } from './dtos';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
@@ -22,16 +21,6 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Get all notifications for admin dashboard' })
   getAdminNotifications(@Query() query: AdminQueryNotificationDto) {
     return this.notificationsService.getAdminNotifications(query);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  @Post('admin/broadcast')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create and send broadcast notification to active users' })
-  createAdminBroadcast(@Req() req: Request, @Body() dto: CreateAdminBroadcastDto) {
-    const { sub } = req['user'];
-    return this.notificationsService.createAdminBroadcast(dto, sub);
   }
 
   @UseGuards(JwtAuthGuard)
