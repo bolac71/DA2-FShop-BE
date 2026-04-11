@@ -5,7 +5,7 @@ import { DataSource, ILike, In, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { ProductVariant } from './entities/product-variant.entity';
-import { CreateProductDto, ImageSearchResultDto, VoiceSearchResponseDto } from './dtos';
+import { CreateProductDto, ImageSearchResultDto, UpdateProductDto, UpdateProductFullDto, VoiceSearchResponseDto } from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { BrandsService } from '../brands/brands.service';
 import { CategoriesService } from '../categories/categories.service';
@@ -18,6 +18,7 @@ import { CouponStatus, CouponType } from 'src/constants';
 import { Coupon } from '../coupons/entities';
 import { CouponsService } from '../coupons/coupons.service';
 import { AiService } from '../ai/ai.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class ProductsService {
@@ -39,7 +40,24 @@ export class ProductsService {
     private sizesService: SizesService,
     private couponsService: CouponsService,
     private aiService: AiService,
+    private cloudinaryService: CloudinaryService,
   ) { }
+
+  private ensureUniqueVariantCombination(
+    variants: Array<{ id?: number; colorId: number; sizeId: number }>,
+  ) {
+    const signatures = new Set<string>();
+    for (const variant of variants) {
+      const signature = `${variant.colorId}-${variant.sizeId}`;
+      if (signatures.has(signature)) {
+        throw new HttpException(
+          `Duplicate variant combination colorId ${variant.colorId}, sizeId ${variant.sizeId}`,
+          HttpStatus.CONFLICT,
+        );
+      }
+      signatures.add(signature);
+    }
+  }
 
   private getCouponDiscountAmount(coupon: Coupon, productPrice: number) {
     const couponValue = Number(coupon.value) || 0;
@@ -270,7 +288,7 @@ export class ProductsService {
   async findOne(id: number) {
     const product = await this.productsRepository.findOne({
       where: { id, isActive: true },
-      relations: ['brand', 'category', 'images', 'variants'],
+      relations: ['brand', 'category', 'images', 'variants', 'variants.color', 'variants.size'],
     });
 
     if (!product)
@@ -325,6 +343,307 @@ export class ProductsService {
       soldQuantity: totalSoldQuantity,
       variants: processedVariants,
     };
+  }
+
+  async update(id: number, updateProductDto: UpdateProductDto) {
+    if (Object.keys(updateProductDto).length === 0) {
+      throw new HttpException('No fields provided for update', HttpStatus.BAD_REQUEST);
+    }
+
+    const product = await this.productsRepository.findOne({
+      where: { id, isActive: true },
+    });
+
+    if (!product) {
+      throw new HttpException(`Product with id ${id} not found`, HttpStatus.NOT_FOUND);
+    }
+
+    if (updateProductDto.brandId !== undefined) {
+      await this.brandsService.getById(updateProductDto.brandId);
+    }
+
+    if (updateProductDto.categoryId !== undefined) {
+      await this.categoriesService.getById(updateProductDto.categoryId);
+    }
+
+    Object.assign(product, {
+      ...(updateProductDto.name !== undefined && { name: updateProductDto.name }),
+      ...(updateProductDto.description !== undefined && { description: updateProductDto.description }),
+      ...(updateProductDto.brandId !== undefined && { brandId: updateProductDto.brandId }),
+      ...(updateProductDto.categoryId !== undefined && { categoryId: updateProductDto.categoryId }),
+      ...(updateProductDto.price !== undefined && { price: updateProductDto.price }),
+      ...(updateProductDto.isActive !== undefined && { isActive: updateProductDto.isActive }),
+    });
+
+    const updatedProduct = await this.productsRepository.save(product);
+    return this.findOne(updatedProduct.id);
+  }
+
+  async updateFull(
+    id: number,
+    updateDto: UpdateProductFullDto,
+    productImages: Express.Multer.File[] = [],
+    variantImages: Express.Multer.File[] = [],
+  ) {
+    const product = await this.productsRepository.findOne({
+      where: { id, isActive: true },
+      relations: ['images', 'variants'],
+    });
+
+    if (!product) {
+      throw new HttpException(`Product with id ${id} not found`, HttpStatus.NOT_FOUND);
+    }
+
+    const currentImages = product.images ?? [];
+    const currentVariants = product.variants ?? [];
+
+    if (updateDto.brandId !== undefined) {
+      await this.brandsService.getById(updateDto.brandId);
+    }
+
+    if (updateDto.categoryId !== undefined) {
+      await this.categoriesService.getById(updateDto.categoryId);
+    }
+
+    const upsertVariants = updateDto.variants ?? [];
+    const removeVariantIds = new Set(updateDto.removeVariantIds ?? []);
+    const keepImageIds = new Set(
+      updateDto.keepImageIds ?? currentImages.filter((img) => img.isActive).map((img) => img.id),
+    );
+
+    const hasAnyChange =
+      Object.keys(updateDto).length > 0 ||
+      productImages.length > 0 ||
+      variantImages.length > 0;
+
+    if (!hasAnyChange) {
+      throw new HttpException('No fields provided for update', HttpStatus.BAD_REQUEST);
+    }
+
+    const uploadedGallery =
+      productImages.length > 0
+        ? await Promise.all(productImages.map((file) => this.cloudinaryService.uploadFile(file)))
+        : [];
+
+    const uploadedVariantImages =
+      variantImages.length > 0
+        ? await Promise.all(variantImages.map((file) => this.cloudinaryService.uploadFile(file)))
+        : [];
+
+    const uploadedPublicIds: string[] = [];
+    for (const upload of [...uploadedGallery, ...uploadedVariantImages]) {
+      const publicId = (upload as { public_id?: string }).public_id;
+      if (typeof publicId === 'string' && publicId.length > 0) {
+        uploadedPublicIds.push(publicId);
+      }
+    }
+
+    const oldPublicIdsToDelete = new Set<string>();
+
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        Object.assign(product, {
+          ...(updateDto.name !== undefined && { name: updateDto.name }),
+          ...(updateDto.description !== undefined && { description: updateDto.description }),
+          ...(updateDto.brandId !== undefined && { brandId: updateDto.brandId }),
+          ...(updateDto.categoryId !== undefined && { categoryId: updateDto.categoryId }),
+          ...(updateDto.price !== undefined && { price: updateDto.price }),
+          ...(updateDto.isActive !== undefined && { isActive: updateDto.isActive }),
+        });
+
+        await manager.save(product);
+
+        for (const image of currentImages) {
+          if (!image.isActive) {
+            continue;
+          }
+
+          if (!keepImageIds.has(image.id)) {
+            image.isActive = false;
+            await manager.save(image);
+            if (image.publicId) {
+              oldPublicIdsToDelete.add(image.publicId);
+            }
+          }
+        }
+
+        if (uploadedGallery.length > 0) {
+          const normalizedGalleryUploads = uploadedGallery.filter(
+            (upload): upload is NonNullable<typeof upload> => Boolean(upload),
+          );
+
+          const newGalleryEntities = normalizedGalleryUploads.map((upload) =>
+            manager.create(ProductImage, {
+              productId: product.id,
+              imageUrl: upload.secure_url,
+              publicId: upload.public_id,
+              isActive: true,
+            }),
+          );
+          await manager.save(newGalleryEntities);
+        }
+
+        const activeVariants = currentVariants.filter((variant) => variant.isActive);
+        const variantById = new Map(currentVariants.map((variant) => [variant.id, variant]));
+
+        for (const variantId of removeVariantIds) {
+          const variant = variantById.get(variantId);
+          if (!variant || variant.productId !== product.id || !variant.isActive) {
+            continue;
+          }
+
+          variant.isActive = false;
+          await manager.save(variant);
+          if (variant.publicId) {
+            oldPublicIdsToDelete.add(variant.publicId);
+          }
+        }
+
+        const finalVariantsForUniqueCheck: Array<{ id?: number; colorId: number; sizeId: number }> =
+          activeVariants
+            .filter((variant) => !removeVariantIds.has(variant.id))
+            .map((variant) => ({ id: variant.id, colorId: variant.colorId, sizeId: variant.sizeId }));
+
+        const existingVariantPayloadIds = new Set<number>();
+
+        for (const variantInput of upsertVariants) {
+          await this.colorsService.findOne(variantInput.colorId);
+          await this.sizesService.findOne(variantInput.sizeId);
+
+          if (variantInput.id) {
+            existingVariantPayloadIds.add(variantInput.id);
+            const existing = variantById.get(variantInput.id);
+            if (!existing || existing.productId !== product.id) {
+              throw new HttpException(
+                `Variant with id ${variantInput.id} not found for this product`,
+                HttpStatus.NOT_FOUND,
+              );
+            }
+
+            const currentIndex = finalVariantsForUniqueCheck.findIndex((item) => item.id === existing.id);
+            if (currentIndex >= 0) {
+              finalVariantsForUniqueCheck[currentIndex] = {
+                id: existing.id,
+                colorId: variantInput.colorId,
+                sizeId: variantInput.sizeId,
+              };
+            }
+          } else {
+            finalVariantsForUniqueCheck.push({
+              colorId: variantInput.colorId,
+              sizeId: variantInput.sizeId,
+            });
+          }
+        }
+
+        this.ensureUniqueVariantCombination(finalVariantsForUniqueCheck);
+
+        for (const variantInput of upsertVariants) {
+          const nextVariantImage =
+            variantInput.imageFileIndex !== undefined
+              ? uploadedVariantImages[variantInput.imageFileIndex]
+              : undefined;
+
+          if (variantInput.id) {
+            const existing = variantById.get(variantInput.id) as ProductVariant;
+            if (removeVariantIds.has(existing.id)) {
+              throw new HttpException(
+                `Variant with id ${existing.id} cannot be updated and removed in same request`,
+                HttpStatus.BAD_REQUEST,
+              );
+            }
+
+            const conflict = await manager.findOne(ProductVariant, {
+              where: {
+                productId: product.id,
+                colorId: variantInput.colorId,
+                sizeId: variantInput.sizeId,
+              },
+            });
+
+            if (conflict && conflict.id !== existing.id) {
+              throw new HttpException(
+                `Variant with colorId ${variantInput.colorId} and sizeId ${variantInput.sizeId} already exists`,
+                HttpStatus.CONFLICT,
+              );
+            }
+
+            existing.sku = variantInput.sku;
+            existing.colorId = variantInput.colorId;
+            existing.sizeId = variantInput.sizeId;
+            existing.isActive = true;
+
+            if (nextVariantImage) {
+              if (existing.publicId) {
+                oldPublicIdsToDelete.add(existing.publicId);
+              }
+              existing.imageUrl = nextVariantImage.secure_url;
+              existing.publicId = nextVariantImage.public_id;
+            } else if (variantInput.removeImage) {
+              if (existing.publicId) {
+                oldPublicIdsToDelete.add(existing.publicId);
+              }
+              existing.imageUrl = undefined;
+              existing.publicId = undefined;
+            }
+
+            await manager.save(existing);
+          } else {
+            const conflict = await manager.findOne(ProductVariant, {
+              where: {
+                productId: product.id,
+                colorId: variantInput.colorId,
+                sizeId: variantInput.sizeId,
+              },
+            });
+
+            if (conflict) {
+              throw new HttpException(
+                `Variant with colorId ${variantInput.colorId} and sizeId ${variantInput.sizeId} already exists`,
+                HttpStatus.CONFLICT,
+              );
+            }
+
+            const created = manager.create(ProductVariant, {
+              productId: product.id,
+              sku: variantInput.sku,
+              colorId: variantInput.colorId,
+              sizeId: variantInput.sizeId,
+              isActive: true,
+              ...(nextVariantImage && {
+                imageUrl: nextVariantImage.secure_url,
+                publicId: nextVariantImage.public_id,
+              }),
+            });
+            await manager.save(created);
+          }
+        }
+
+        if (upsertVariants.length === 0 && existingVariantPayloadIds.size === 0) {
+          return;
+        }
+      });
+    } catch (error) {
+      if (uploadedPublicIds.length > 0) {
+        await Promise.allSettled(
+          uploadedPublicIds.map((publicId) => this.cloudinaryService.deleteFile(publicId)),
+        );
+      }
+      throw error;
+    }
+
+    if (oldPublicIdsToDelete.size > 0) {
+      setImmediate(() => {
+        Promise.allSettled(
+          [...oldPublicIdsToDelete].map((publicId) => this.cloudinaryService.deleteFile(publicId)),
+        ).catch((error) => {
+          // eslint-disable-next-line no-console
+          console.error('Failed to cleanup old product images:', error);
+        });
+      });
+    }
+
+    return this.findOne(id);
   }
 
   async remove(id: number) {

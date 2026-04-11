@@ -18,7 +18,7 @@ import {
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags, ApiConsumes, ApiNotFoundResponse } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
-import { CreateProductDto, ImageSearchDto, ImageSearchResultDto, VoiceSearchResponseDto } from './dtos';
+import { CreateProductDto, ImageSearchDto, ImageSearchResultDto, UpdateProductDto, UpdateProductFullDto, VoiceSearchResponseDto } from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
@@ -117,6 +117,43 @@ export class ProductsController {
   @ApiNotFoundResponse({ description: 'Product not found' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.productsService.findOne(id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a product basic information' })
+  @ApiNotFoundResponse({ description: 'Product not found' })
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateProductDto: UpdateProductDto,
+  ) {
+    return this.productsService.update(id, updateProductDto);
+  }
+
+  @Patch(':id/full')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'productImages', maxCount: 10 },
+      { name: 'variantImages', maxCount: 100 },
+    ]),
+  )
+  @ApiOperation({ summary: 'Update product with gallery and variants in one request' })
+  @ApiNotFoundResponse({ description: 'Product not found' })
+  updateFull(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateProductFullDto: UpdateProductFullDto,
+    @UploadedFiles()
+    files?: {
+      productImages?: Express.Multer.File[];
+      variantImages?: Express.Multer.File[];
+    },
+  ) {
+    return this.productsService.updateFull(
+      id,
+      updateProductFullDto,
+      files?.productImages ?? [],
+      files?.variantImages ?? [],
+    );
   }
 
   @Delete(':id')
