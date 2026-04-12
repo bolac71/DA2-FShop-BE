@@ -31,3 +31,4 @@ export {
 	LivestreamProduct,
 	LivestreamOrder,
 } from '../modules/livestreams/entities';
+export { Payment, PaymentRetry } from '../modules/payments/entities';

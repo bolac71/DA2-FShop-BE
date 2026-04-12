@@ -39,6 +39,8 @@ import {
   LivestreamComment,
   LivestreamProduct,
   LivestreamOrder,
+  Payment,
+  PaymentRetry,
 } from './entities';
 
 /**
@@ -92,6 +94,8 @@ export const AppDataSource = new DataSource({
     LivestreamComment,
     LivestreamProduct,
     LivestreamOrder,
+    Payment,
+    PaymentRetry,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
