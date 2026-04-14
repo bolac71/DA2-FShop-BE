@@ -17,7 +17,6 @@ export class CreatePaymentsTable1744100000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE TYPE payments_method_enum AS ENUM(
         'momo',
-        'vnpay',
         'cod'
       )
     `);
@@ -65,7 +64,7 @@ export class CreatePaymentsTable1744100000000 implements MigrationInterface {
             name: 'external_transaction_id',
             type: 'varchar',
             isNullable: true,
-            comment: 'Transaction ID from payment gateway (MoMo/VNPay)',
+            comment: 'Transaction ID from payment gateway (MoMo)',
           },
           {
             name: 'request_id',
@@ -153,8 +152,8 @@ export class CreatePaymentsTable1744100000000 implements MigrationInterface {
     // Drop table (will cascade delete related records)
     await queryRunner.dropTable('payments');
 
-    // Drop enum types
-    await queryRunner.query('DROP TYPE payments_status_enum');
-    await queryRunner.query('DROP TYPE payments_method_enum');
+    // Drop enum types (IF EXISTS in case TypeORM already dropped them)
+    await queryRunner.query('DROP TYPE IF EXISTS payments_status_enum');
+    await queryRunner.query('DROP TYPE IF EXISTS payments_method_enum');
   }
 }

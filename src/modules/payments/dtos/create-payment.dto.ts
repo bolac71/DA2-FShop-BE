@@ -10,7 +10,7 @@ export class CreatePaymentRequestDto {
   @ApiProperty({
     enum: PaymentMethod,
     required: true,
-    description: 'Payment method: momo, vnpay, or cod',
+    description: 'Payment method: momo or cod',
   })
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;

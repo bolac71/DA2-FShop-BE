@@ -51,7 +51,7 @@ export class PaymentsController {
   @ApiOperation({
     summary: 'Initiate a payment for an order',
     description:
-      'Creates a payment record and returns a redirect URL to complete payment on MoMo/VNPay. For COD, payment is completed immediately.',
+      'Creates a payment record and returns a redirect URL to complete payment on MoMo. For COD, payment is completed immediately.',
   })
   @ApiQuery({
     name: 'returnUrl',
@@ -97,7 +97,7 @@ export class PaymentsController {
     }
 
     const rawIp = (req.ip || req.connection.remoteAddress || '127.0.0.1') as string;
-    // Normalize IPv6 loopback/mapped to IPv4 (VNPay requires valid IPv4)
+    // Normalize IPv6 loopback/mapped to IPv4 for payment gateway compatibility
     const ipAddress = rawIp === '::1' ? '127.0.0.1'
       : rawIp.startsWith('::ffff:') ? rawIp.slice(7)
       : rawIp;
@@ -130,52 +130,9 @@ export class PaymentsController {
     return this.paymentsService.verifyMoMoReturn(queryParams);
   }
 
-  /**
-   * GET /payments/vnpay/verify-return
-   * Verify VNPay return URL params after user completes payment
-   */
-  @Get('vnpay/verify-return')
-  @HttpCode(200)
-  @ApiOperation({
-    summary: 'Verify VNPay return URL after payment',
-    description: 'Called by frontend after VNPay redirects user back. Verifies signature and updates payment/order status.',
-  })
-  @ApiOkResponse({
-    description: 'Verification result',
-    schema: { example: { success: true, paymentId: 1, orderId: 1, message: '' } },
-  })
-  async verifyVNPayReturn(@Query() queryParams: Record<string, string>) {
-    return this.paymentsService.verifyVNPayReturn(queryParams);
-  }
 
-  /**
-   * GET /payments/vnpay/return
-   * VNPay redirects here after payment (backend handles verification then redirects to frontend)
-   * This avoids needing to expose the frontend via ngrok
-   */
-  @Get('vnpay/return')
-  @ApiOperation({
-    summary: 'VNPay return URL handler (backend redirect)',
-    description: 'VNPay redirects here after payment. Verifies signature, updates DB, then redirects to frontend with result.',
-  })
-  async vnpayReturn(
-    @Query() queryParams: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    const frontendUrl = this.configService.get<string>('FE_URL') || 'http://localhost:5173';
-    try {
-      const result = await this.paymentsService.verifyVNPayReturn(queryParams);
-      const url = result.success
-        ? `${frontendUrl}/payment/return?success=true&orderId=${result.orderId}&paymentId=${result.paymentId}`
-        : `${frontendUrl}/payment/return?success=false&message=${encodeURIComponent(result.message)}&orderId=${result.orderId}&paymentId=${result.paymentId}`;
-      console.log('[VNPay] Redirecting to:', url);
-      return res.redirect(302, url);
-    } catch (error) {
-      console.error('[VNPay] Return verification error:', error);
-      const url = `${frontendUrl}/payment/return?success=false&message=${encodeURIComponent('Xác nhận thanh toán thất bại')}`;
-      return res.redirect(302, url);
-    }
-  }
+
+
 
   /**
    * POST /payments/webhook/momo
@@ -210,38 +167,7 @@ export class PaymentsController {
     return result;
   }
 
-  /**
-   * POST /payments/webhook/vnpay
-   * VNPay payment gateway webhook receiver
-   * Verifies signature and updates payment status
-   * VNPay sends data as query parameters, not body
-   */
-  @Get('webhook/vnpay')
-  @HttpCode(200)
-  @ApiOperation({
-    summary: 'VNPay payment webhook callback',
-    description:
-      'Webhook endpoint for VNPay to send payment status updates via query parameters. Auto-transitions order to CONFIRMED if payment successful.',
-  })
-  @ApiOkResponse({
-    description: 'Webhook processed successfully',
-    schema: { example: { RspCode: '00', Message: 'Webhook processed successfully' } },
-  })
-  @ApiBadRequestResponse({
-    description: 'Invalid webhook signature or missing signature',
-  })
-  @ApiNotFoundResponse({
-    description: 'Payment not found',
-  })
-  async vnpayWebhook(@Query() queryParams: Record<string, string>) {
-    if (!queryParams.vnp_SecureHash) {
-      throw new HttpException('Missing vnp_SecureHash in webhook', HttpStatus.BAD_REQUEST);
-    }
 
-    const result = await this.paymentsService.processVNPayWebhook(queryParams);
-
-    return result;
-  }
 
   /**
    * GET /payments/:paymentId

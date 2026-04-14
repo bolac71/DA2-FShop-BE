@@ -5,7 +5,6 @@ import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
 import { Payment, PaymentRetry, Order } from 'src/entities';
 import { MoMoGateway } from 'src/utils/momo-gateway.util';
-import { VNPayGateway } from 'src/utils/vnpay-gateway.util';
 
 @Module({
   imports: [
@@ -13,7 +12,7 @@ import { VNPayGateway } from 'src/utils/vnpay-gateway.util';
     TypeOrmModule.forFeature([Payment, PaymentRetry, Order]),
   ],
   controllers: [PaymentsController],
-  providers: [PaymentsService, MoMoGateway, VNPayGateway],
+  providers: [PaymentsService, MoMoGateway],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}

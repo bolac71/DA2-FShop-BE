@@ -7,7 +7,6 @@ import { Order } from 'src/modules/orders/entities/order.entity';
 import { PaymentStatus, PaymentMethod, OrderStatus } from 'src/constants';
 import { CreatePaymentRequestDto, PaymentResponseDto } from './dtos';
 import { MoMoGateway } from 'src/utils/momo-gateway.util';
-import { VNPayGateway } from 'src/utils/vnpay-gateway.util';
 
 @Injectable()
 export class PaymentsService {
@@ -25,7 +24,6 @@ export class PaymentsService {
     private readonly orderRepository: Repository<Order>,
     private readonly dataSource: DataSource,
     private readonly momoGateway: MoMoGateway,
-    private readonly vnpayGateway: VNPayGateway,
   ) {}
 
   /**
@@ -45,12 +43,12 @@ export class PaymentsService {
     });
 
     if (!order) {
-      throw new NotFoundException(`Order not found or unauthorized`);
+      throw new HttpException(`Order not found or unauthorized`, HttpStatus.NOT_FOUND);
     }
 
     // Check if order is still in PENDING status
     if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException(`Order must be in PENDING status to initiate payment`);
+      throw new HttpException(`Order must be in PENDING status to initiate payment`, HttpStatus.BAD_REQUEST);
     }
 
     // Check if payment already exists for this order
@@ -59,7 +57,7 @@ export class PaymentsService {
     });
 
     if (existingPayment && existingPayment.status === PaymentStatus.PENDING) {
-      throw new ConflictException(`There is already a pending payment for this order`);
+      throw new HttpException(`There is already a pending payment for this order`, HttpStatus.CONFLICT);
     }
 
     // For COD, create payment with COMPLETED status immediately
@@ -107,14 +105,6 @@ export class PaymentsService {
           returnUrl,
           notifyUrl,
         });
-      } else if (dto.paymentMethod === PaymentMethod.VNPAY) {
-        redirectUrl = this.vnpayGateway.initiatePayment({
-          paymentId: payment.id,
-          amount: order.totalAmount,
-          orderId: order.id,
-          returnUrl,
-          ipAddress,
-        });
       }
     } catch (error: any) {
       // Update payment status to FAILED if gateway initialization fails
@@ -135,7 +125,7 @@ export class PaymentsService {
     try {
       // Verify signature
       if (!this.momoGateway.verifyWebhookSignature(webhookData, signature)) {
-        throw new BadRequestException('Invalid MoMo webhook signature');
+        throw new HttpException('Invalid MoMo webhook signature', HttpStatus.BAD_REQUEST);
       }
 
       // Find payment by ID
@@ -145,7 +135,7 @@ export class PaymentsService {
       });
 
       if (!payment) {
-        throw new NotFoundException(`Payment not found: ${webhookData.orderId}`);
+        throw new HttpException(`Payment not found: ${webhookData.orderId}`, HttpStatus.NOT_FOUND);
       }
 
       // Check for duplicate webhook (idempotent)
@@ -174,60 +164,6 @@ export class PaymentsService {
   }
 
   /**
-   * Process webhook from VNPay payment gateway
-   */
-  async processVNPayWebhook(
-    queryParams: Record<string, string>,
-  ): Promise<{ RspCode: string; Message: string }> {
-    try {
-      const secureHash = queryParams.vnp_SecureHash;
-
-      // Verify signature
-      const dataToVerify = { ...queryParams };
-      delete dataToVerify.vnp_SecureHash;
-      delete dataToVerify.vnp_SecureHashType;
-
-      if (!this.vnpayGateway.verifyWebhookSignature(dataToVerify, secureHash)) {
-        throw new BadRequestException('Invalid VNPay webhook signature');
-      }
-
-      // Find payment by transaction reference
-      const paymentId = parseInt(queryParams.vnp_TxnRef);
-      const payment = await this.paymentRepository.findOne({
-        where: { id: paymentId },
-        relations: ['order'],
-      });
-
-      if (!payment) {
-        throw new NotFoundException(`Payment not found: ${paymentId}`);
-      }
-
-      // Check for duplicate webhook (idempotent)
-      if (payment.status !== PaymentStatus.PENDING) {
-        return { RspCode: '00', Message: 'Payment already processed' };
-      }
-
-      // Update payment based on result
-      if (this.vnpayGateway.isPaymentSuccess(queryParams.vnp_ResponseCode)) {
-        payment.status = PaymentStatus.COMPLETED;
-        payment.externalTransactionId = queryParams.vnp_TransactionNo;
-
-        // Auto-transition order to CONFIRMED
-        await this.autoTransitionOrderToConfirmed(payment.order);
-      } else {
-        payment.status = PaymentStatus.FAILED;
-      }
-
-      await this.paymentRepository.save(payment);
-
-      return { RspCode: '00', Message: 'Webhook processed successfully' };
-    } catch (error) {
-      console.error('VNPay webhook error:', error);
-      return { RspCode: '97', Message: 'Webhook processing error' };
-    }
-  }
-
-  /**
    * Get payment status
    */
   async getPaymentStatus(paymentId: number, userId: number): Promise<any> {
@@ -236,7 +172,7 @@ export class PaymentsService {
     });
 
     if (!payment) {
-      throw new NotFoundException(`Payment not found or unauthorized`);
+      throw new HttpException(`Payment not found or unauthorized`, HttpStatus.NOT_FOUND);
     }
 
     return {
@@ -268,17 +204,17 @@ export class PaymentsService {
     });
 
     if (!payment) {
-      throw new NotFoundException(`Payment not found or unauthorized`);
+      throw new HttpException(`Payment not found or unauthorized`, HttpStatus.NOT_FOUND);
     }
 
     // Only failed payments can be retried
     if (payment.status !== PaymentStatus.FAILED) {
-      throw new BadRequestException(`Only failed payments can be retried. Current status: ${payment.status}`);
+      throw new HttpException(`Only failed payments can be retried. Current status: ${payment.status}`, HttpStatus.BAD_REQUEST);
     }
 
     // Check retry count limit
     if (payment.retryCount >= this.MAX_RETRY_COUNT) {
-      throw new ConflictException(`Maximum retry attempts (${this.MAX_RETRY_COUNT}) exceeded`);
+      throw new HttpException(`Maximum retry attempts (${this.MAX_RETRY_COUNT}) exceeded`, HttpStatus.CONFLICT);
     }
 
     // Record retry attempt
@@ -303,14 +239,6 @@ export class PaymentsService {
           orderId: payment.order.id,
           returnUrl,
           notifyUrl,
-        });
-      } else if (payment.method === PaymentMethod.VNPAY) {
-        redirectUrl = this.vnpayGateway.initiatePayment({
-          paymentId: payment.id,
-          amount: payment.amount,
-          orderId: payment.order.id,
-          returnUrl,
-          ipAddress,
         });
       }
 
@@ -352,7 +280,7 @@ export class PaymentsService {
     const paymentId = parseInt(momoOrderId);
 
     if (!paymentId || isNaN(paymentId)) {
-      throw new BadRequestException('Invalid orderId parameter');
+      throw new HttpException('Invalid orderId parameter', HttpStatus.BAD_REQUEST);
     }
 
     const payment = await this.paymentRepository.findOne({
@@ -361,12 +289,12 @@ export class PaymentsService {
     });
 
     if (!payment) {
-      throw new NotFoundException(`Payment not found`);
+      throw new HttpException(`Payment not found`, HttpStatus.NOT_FOUND);
     }
 
     // Verify signature to ensure params are authentic
     if (!this.momoGateway.verifyReturnSignature(params)) {
-      throw new BadRequestException('Invalid MoMo return signature');
+      throw new HttpException('Invalid MoMo return signature', HttpStatus.BAD_REQUEST);
     }
 
     const resultCode = parseInt(params.resultCode ?? '-1');
@@ -389,61 +317,6 @@ export class PaymentsService {
       paymentId: payment.id,
       orderId: payment.orderId,
       message: params.message || '',
-    };
-  }
-
-  /**
-   * Verify VNPay return URL params and update payment status
-   */
-  async verifyVNPayReturn(params: Record<string, string>): Promise<{
-    success: boolean;
-    paymentId: number;
-    orderId: number;
-    message: string;
-  }> {
-    const secureHash = params.vnp_SecureHash;
-    const paymentId = parseInt(params.vnp_TxnRef ?? '0');
-
-    if (!paymentId || isNaN(paymentId)) {
-      throw new BadRequestException('Invalid vnp_TxnRef parameter');
-    }
-
-    const dataToVerify = { ...params };
-    delete dataToVerify.vnp_SecureHash;
-    delete dataToVerify.vnp_SecureHashType;
-
-    if (!this.vnpayGateway.verifyWebhookSignature(dataToVerify, secureHash)) {
-      throw new BadRequestException('Invalid VNPay return signature');
-    }
-
-    const payment = await this.paymentRepository.findOne({
-      where: { id: paymentId },
-      relations: ['order'],
-    });
-
-    if (!payment) {
-      throw new NotFoundException(`Payment not found`);
-    }
-
-    if (payment.status === PaymentStatus.PENDING) {
-      if (this.vnpayGateway.isPaymentSuccess(params.vnp_ResponseCode)) {
-        payment.status = PaymentStatus.COMPLETED;
-        payment.externalTransactionId = params.vnp_TransactionNo;
-        await this.paymentRepository.save(payment);
-        await this.autoTransitionOrderToConfirmed(payment.order);
-      } else {
-        payment.status = PaymentStatus.FAILED;
-        await this.paymentRepository.save(payment);
-      }
-    }
-
-    return {
-      success: payment.status === PaymentStatus.COMPLETED,
-      paymentId: payment.id,
-      orderId: payment.orderId,
-      message: this.vnpayGateway.isPaymentSuccess(params.vnp_ResponseCode)
-        ? 'Thanh toán thành công'
-        : `Thanh toán thất bại (mã: ${params.vnp_ResponseCode})`,
     };
   }
 

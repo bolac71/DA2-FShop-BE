@@ -6,7 +6,6 @@ export class AddPaymentMethodToOrdersTable1744100000002 implements MigrationInte
     await queryRunner.query(`
       CREATE TYPE orders_payment_method_enum AS ENUM(
         'momo',
-        'vnpay',
         'cod'
       )
     `);
@@ -26,7 +25,7 @@ export class AddPaymentMethodToOrdersTable1744100000002 implements MigrationInte
     // Drop payment_method column
     await queryRunner.dropColumn('orders', 'payment_method');
 
-    // Drop enum type
-    await queryRunner.query('DROP TYPE orders_payment_method_enum');
+    // Drop enum type (IF EXISTS in case TypeORM already dropped it)
+    await queryRunner.query('DROP TYPE IF EXISTS orders_payment_method_enum');
   }
 }
