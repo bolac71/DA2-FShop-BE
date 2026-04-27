@@ -10,3 +10,5 @@ export * from './redemption-status.enum';
 export * from './notification-type.enum';
 export * from './device-platform.enum';
 export * from './livestream-status.enum';
+export * from './payment-status.enum';
+export * from './payment-method.enum';

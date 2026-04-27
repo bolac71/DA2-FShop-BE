@@ -6,6 +6,7 @@ import { ILike, In, MoreThan, Repository } from 'typeorm';
 import { NotificationGateway } from './notifications.gateway';
 import {
   AdminQueryNotificationDto,
+  CreateAdminBroadcastDto,
   CreateNotificationDto,
   QueryNotificationDto,
   RegisterDeviceTokenDto,
@@ -97,6 +98,22 @@ export class NotificationsService {
     );
 
     return totalInserted;
+  }
+
+  async createAdminBroadcast(payload: CreateAdminBroadcastDto, adminId: number) {
+    const inserted = await this.createForAllActiveUsers(payload);
+
+    this.notiGateway.emitAdminNotificationCreated({
+      ...payload,
+      totalRecipients: inserted,
+      createdBy: adminId,
+      createdAt: new Date(),
+    });
+
+    return {
+      success: true,
+      totalRecipients: inserted,
+    };
   }
 
   async getAdminNotifications(query: AdminQueryNotificationDto) {

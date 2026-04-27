@@ -15,6 +15,7 @@ import {
   Product,
   ProductImage,
   ProductVariant,
+  ProductTryonAsset,
   Inventory,
   InventoryTransaction,
   Order,
@@ -40,6 +41,8 @@ import {
   LivestreamComment,
   LivestreamProduct,
   LivestreamOrder,
+  Payment,
+  PaymentRetry,
 } from './entities';
 
 /**
@@ -69,6 +72,7 @@ export const AppDataSource = new DataSource({
     Product,
     ProductImage,
     ProductVariant,
+    ProductTryonAsset,
     Inventory,
     InventoryTransaction,
     Order,
@@ -94,6 +98,8 @@ export const AppDataSource = new DataSource({
     LivestreamComment,
     LivestreamProduct,
     LivestreamOrder,
+    Payment,
+    PaymentRetry,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

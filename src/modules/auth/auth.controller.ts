@@ -25,16 +25,7 @@ import {
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import {
-  ChangePasswordDto,
-  ForgotPasswordRequestDto,
-  ForgotPasswordResetDto,
-  ForgotPasswordVerifyDto,
-  GoogleLoginDto,
-  LinkGoogleDto,
-  LoginDto,
-  UpdateMeDto,
-} from './dtos';
+import { ChangePasswordDto, GoogleLoginDto, LinkGoogleDto, LoginDto, UpdateMeDto } from './dtos';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
 import type { JwtPayload } from 'src/strategies/jwt.strategy';
@@ -162,26 +153,5 @@ export class AuthController {
   ) {
     await this.authService.changePassword(user.sub, changePasswordDto);
     return null;
-  }
-
-  @Post('forgot-password/request')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send forgot password code to email' })
-  async requestForgotPassword(@Body() dto: ForgotPasswordRequestDto) {
-    return this.authService.requestForgotPassword(dto);
-  }
-
-  @Post('forgot-password/verify')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify forgot password code' })
-  async verifyForgotPasswordCode(@Body() dto: ForgotPasswordVerifyDto) {
-    return this.authService.verifyForgotPasswordCode(dto);
-  }
-
-  @Post('forgot-password/reset')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reset password with email and verification code' })
-  async resetForgotPassword(@Body() dto: ForgotPasswordResetDto) {
-    return this.authService.resetForgotPassword(dto);
   }
 }

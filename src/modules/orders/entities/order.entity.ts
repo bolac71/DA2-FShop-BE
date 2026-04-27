@@ -1,6 +1,7 @@
 import { Exclude } from "class-transformer";
 import { OrderStatus } from "src/constants/order-status.enum";
 import { ShippingMethod } from "src/constants/shipping-method.enum";
+import { PaymentMethod } from "src/constants/payment-method.enum";
 import { User } from "src/entities";
 import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 import { OrderItem } from ".";
@@ -45,6 +46,14 @@ export class Order {
 
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, name: 'shipping_fee' })
   shippingFee: number;
+
+  @Column({
+    type: 'enum',
+    enum: PaymentMethod,
+    nullable: true,
+    name: 'payment_method',
+  })
+  paymentMethod: PaymentMethod;
 
   @ManyToOne(() => User, (user) => user.orders)
   @JoinColumn({ name: 'user_id' })

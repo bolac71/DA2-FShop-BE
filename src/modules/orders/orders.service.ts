@@ -1,9 +1,9 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { Address, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User } from 'src/entities';
+import { Address, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User, Payment } from 'src/entities';
 import { Brackets, DataSource, FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { CreateOrderDto } from './dtos/create-order.dto';
-import { CouponStatus, CouponType, NotificationType, RedemptionStatus, ShippingMethod } from 'src/constants';
+import { CouponStatus, CouponType, NotificationType, RedemptionStatus, ShippingMethod, PaymentStatus, PaymentMethod } from 'src/constants';
 import { OrderStatus } from 'src/constants/order-status.enum';
 import { InventoryType } from 'src/constants/inventory-type.enum';
 import { OrderQueryDto } from 'src/dtos';
@@ -24,6 +24,8 @@ export class OrdersService {
     private orderItemRepository: Repository<OrderItem>,
     @InjectRepository(ProductVariant)
     private readonly variantRepo: Repository<ProductVariant>,
+    @InjectRepository(Payment)
+    private readonly paymentRepository: Repository<Payment>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly inventoriesService: InventoriesService,
     private notificationService: NotificationsService
@@ -425,7 +427,29 @@ export class OrdersService {
         throw new HttpException(String(e), HttpStatus.BAD_REQUEST);
       }
 
-      // Handle CANCELED status - restore stock and remove coupon redemption
+      // Check payment status before transitioning PENDING -> CONFIRMED
+      if (order.status === OrderStatus.PENDING && next === OrderStatus.CONFIRMED) {
+        const payment = await manager.findOne(Payment, {
+          where: { orderId: order.id },
+        });
+
+        // If payment exists, ensure it's completed (unless it's COD)
+        if (payment) {
+          if (payment.status !== PaymentStatus.COMPLETED) {
+            throw new HttpException(
+              `Payment required. Current payment status: ${payment.status}`,
+              HttpStatus.PAYMENT_REQUIRED,
+            );
+          }
+        } else if (actor.role === 'user') {
+          // User cannot transition without payment
+          throw new HttpException(
+            'Payment must be initiated before confirming order',
+            HttpStatus.PAYMENT_REQUIRED,
+          );
+        }
+        // Admin can bypass payment check
+      }
       if (next === OrderStatus.CANCELED || next === OrderStatus.REFUNDED) {
         const inventoryItems: { variant: ProductVariant; quantity: number }[] = [];
 

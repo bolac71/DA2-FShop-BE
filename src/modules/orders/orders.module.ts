@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Order, OrderItem } from './entities';
+import { Order, OrderItem, Payment } from 'src/entities';
 import { CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, ProductVariant, User } from 'src/entities';
 import { InventoriesModule } from '../inventories/inventories.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -13,6 +13,7 @@ import { Livestream, LivestreamOrder } from '../livestreams/entities';
     TypeOrmModule.forFeature([
       Order,
       OrderItem,
+      Payment,
       User,
       ProductVariant,
       Inventory,

@@ -12,6 +12,7 @@ import { Brand } from '../../brands/entities/brand.entity';
 import { Category } from '../../categories/entities/category.entity';
 import { ProductImage } from './product-image.entity';
 import { ProductVariant } from './product-variant.entity';
+import { ProductTryonAsset } from './product-tryon-asset.entity';
 import { Wishlist } from 'src/modules/wishlists/entities/wishlist.entity';
 
 @Entity('products')
@@ -63,6 +64,9 @@ export class Product {
 
   @OneToMany(() => ProductVariant, (variant) => variant.product, { cascade: true })
   variants?: ProductVariant[];
+
+  @OneToMany(() => ProductTryonAsset, (asset) => asset.product, { cascade: true })
+  tryonAssets?: ProductTryonAsset[];
 
   @OneToMany(() => Wishlist, (wishlist) => wishlist.product, { cascade: true })
   wishlists?: Wishlist[];

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Product, ProductImage, ProductVariant } from 'src/entities';
+import { Product, ProductImage, ProductVariant, ProductTryonAsset } from 'src/entities';
 import { ProductsService } from './products.service';
 import { ProductsController } from './products.controller';
 import { BrandsModule } from '../brands/brands.module';
@@ -16,7 +16,7 @@ import { AiModule } from '../ai/ai.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Product, ProductImage, ProductVariant, InventoryTransaction, Inventory]),
+    TypeOrmModule.forFeature([Product, ProductImage, ProductVariant, ProductTryonAsset, InventoryTransaction, Inventory]),
     BrandsModule,
     CategoriesModule,
     ColorsModule,

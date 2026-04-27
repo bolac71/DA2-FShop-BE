@@ -16,6 +16,7 @@ export { Size } from '../modules/sizes/entities/size.entity';
 export { Product } from '../modules/products/entities/product.entity';
 export { ProductImage } from '../modules/products/entities/product-image.entity';
 export { ProductVariant } from '../modules/products/entities/product-variant.entity';
+export { ProductTryonAsset } from '../modules/products/entities/product-tryon-asset.entity';
 export { Inventory, InventoryTransaction } from '../modules/inventories/entities';
 export { Order, OrderItem } from '../modules/orders/entities';
 export { Coupon, CouponRedemption } from '../modules/coupons/entities';
@@ -32,3 +33,4 @@ export {
 	LivestreamProduct,
 	LivestreamOrder,
 } from '../modules/livestreams/entities';
+export { Payment, PaymentRetry } from '../modules/payments/entities';
