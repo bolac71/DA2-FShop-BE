@@ -17,6 +17,7 @@ import { ReviewVote } from 'src/modules/reviews/entities/review-vote.entity';
 import { Review } from 'src/modules/reviews/entities/review.entity';
 import { Post, PostComment, PostLike } from 'src/modules/posts/entities';
 import { Notification } from 'src/modules/notifications/entities/notification.entity';
+import { DeviceToken } from 'src/modules/notifications/entities/device-token.entity';
 
 @Entity('users')
 export class User {
@@ -101,4 +102,8 @@ export class User {
   @OneToMany(() => Notification, (notification) => notification.user)
   @Exclude()
   notifications: Notification[];
+
+  @OneToMany(() => DeviceToken, (deviceToken) => deviceToken.user)
+  @Exclude()
+  deviceTokens: DeviceToken[];
 }

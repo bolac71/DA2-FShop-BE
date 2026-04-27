@@ -1,23 +1,29 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Notification, User } from 'src/entities';
-import { ILike, MoreThan, Repository } from 'typeorm';
+import { DeviceToken, Notification, User } from 'src/entities';
+import { NotificationType } from 'src/constants';
+import { ILike, In, MoreThan, Repository } from 'typeorm';
 import { NotificationGateway } from './notifications.gateway';
 import {
   AdminQueryNotificationDto,
   CreateNotificationDto,
   QueryNotificationDto,
+  RegisterDeviceTokenDto,
 } from './dtos';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
   private static readonly PUBLIC_NOTIFICATION_BATCH_SIZE = 500;
+  private static readonly EXPO_PUSH_BATCH_SIZE = 100;
+  private static readonly EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
   constructor(
     @InjectRepository(Notification)
     private notificationRepository: Repository<Notification>,
     @InjectRepository(User) private userRepository: Repository<User>,
+    @InjectRepository(DeviceToken)
+    private deviceTokenRepository: Repository<DeviceToken>,
     private notiGateway: NotificationGateway,
   ) {}
 
@@ -39,6 +45,8 @@ export class NotificationsService {
     
     this.notiGateway.sendToUser(userId, savedNoti);
     this.logger.log(`Notification emitted: id=${savedNoti.id}, user=${userId}`);
+
+    await this.trySendOrderPush(userId, savedNoti);
     
     return savedNoti;
   }
@@ -175,11 +183,194 @@ export class NotificationsService {
   }
 
   async markAsRead(userId: number) {
-    if (!(await this.userRepository.findBy({ id: userId })))
+    if (!(await this.userRepository.findOneBy({ id: userId })))
       throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
     return this.notificationRepository.update(
       { user: { id: userId }, isRead: false },
       { isRead: true },
     );
+  }
+
+  async registerDeviceToken(userId: number, registerDeviceTokenDto: RegisterDeviceTokenDto) {
+    if (!(await this.userRepository.findOneBy({ id: userId }))) {
+      throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
+    }
+
+    const existingToken = await this.deviceTokenRepository.findOne({
+      where: { token: registerDeviceTokenDto.token },
+    });
+
+    if (existingToken) {
+      existingToken.user = { id: userId } as User;
+      existingToken.platform = registerDeviceTokenDto.platform;
+      existingToken.isActive = true;
+      existingToken.lastUsedAt = new Date();
+
+      const saved = await this.deviceTokenRepository.save(existingToken);
+      return {
+        id: saved.id,
+        platform: saved.platform,
+        isActive: saved.isActive,
+      };
+    }
+
+    const newDeviceToken = this.deviceTokenRepository.create({
+      token: registerDeviceTokenDto.token,
+      platform: registerDeviceTokenDto.platform,
+      isActive: true,
+      lastUsedAt: new Date(),
+      user: { id: userId },
+    });
+
+    const saved = await this.deviceTokenRepository.save(newDeviceToken);
+    return {
+      id: saved.id,
+      platform: saved.platform,
+      isActive: saved.isActive,
+    };
+  }
+
+  async unregisterDeviceToken(userId: number, token: string) {
+    const existingToken = await this.deviceTokenRepository.findOne({
+      where: {
+        token,
+        user: { id: userId },
+      },
+    });
+
+    if (!existingToken) {
+      return { success: true };
+    }
+
+    existingToken.isActive = false;
+    existingToken.lastUsedAt = new Date();
+    await this.deviceTokenRepository.save(existingToken);
+
+    return { success: true };
+  }
+
+  async getMyDeviceTokens(userId: number) {
+    const tokens = await this.deviceTokenRepository.find({
+      where: { user: { id: userId } },
+      order: { updatedAt: 'DESC' },
+    });
+
+    return tokens.map((token) => ({
+      id: token.id,
+      tokenMasked: this.maskToken(token.token),
+      platform: token.platform,
+      isActive: token.isActive,
+      lastUsedAt: token.lastUsedAt,
+      createdAt: token.createdAt,
+      updatedAt: token.updatedAt,
+    }));
+  }
+
+  private async trySendOrderPush(userId: number, notification: Notification) {
+    if (notification.type !== NotificationType.ORDER) {
+      return;
+    }
+
+    const activeTokens = await this.deviceTokenRepository.find({
+      where: { user: { id: userId }, isActive: true },
+      order: { updatedAt: 'DESC' },
+    });
+
+    if (!activeTokens.length) {
+      this.logger.log(`Skip push: no active device token for user=${userId}`);
+      return;
+    }
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Accept-encoding': 'gzip, deflate',
+      'Content-Type': 'application/json',
+    };
+
+    if (process.env.EXPO_ACCESS_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
+    }
+
+    for (let start = 0; start < activeTokens.length; start += NotificationsService.EXPO_PUSH_BATCH_SIZE) {
+      const tokenBatch = activeTokens.slice(start, start + NotificationsService.EXPO_PUSH_BATCH_SIZE);
+      const messageBatch = tokenBatch.map((deviceToken) => ({
+        to: deviceToken.token,
+        title: notification.title ?? 'FShop',
+        body: notification.message ?? '',
+        sound: 'default',
+        data: {
+          notificationId: notification.id,
+          type: notification.type,
+        },
+      }));
+
+      try {
+        const response = await fetch(NotificationsService.EXPO_PUSH_URL, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(messageBatch),
+        });
+
+        const responseText = await response.text();
+        let parsed: { data?: Array<{ status?: string; details?: { error?: string } }> } | null = null;
+
+        try {
+          parsed = JSON.parse(responseText) as { data?: Array<{ status?: string; details?: { error?: string } }> };
+        } catch {
+          parsed = null;
+        }
+
+        if (!response.ok) {
+          this.logger.warn(
+            `Expo push request failed: status=${response.status}, user=${userId}, body=${responseText}`,
+          );
+          continue;
+        }
+
+        const tickets = parsed?.data ?? [];
+        const invalidTokens: string[] = [];
+
+        tickets.forEach((ticket, index) => {
+          const isInvalidTokenError =
+            ticket.status === 'error' &&
+            (ticket.details?.error === 'DeviceNotRegistered' ||
+              ticket.details?.error === 'InvalidCredentials');
+
+          if (isInvalidTokenError) {
+            invalidTokens.push(tokenBatch[index].token);
+          }
+        });
+
+        if (invalidTokens.length) {
+          await this.deviceTokenRepository.update(
+            { token: In(invalidTokens) },
+            { isActive: false },
+          );
+
+          this.logger.warn(
+            `Deactivated invalid device tokens: count=${invalidTokens.length}, user=${userId}`,
+          );
+        }
+
+        const now = new Date();
+        await this.deviceTokenRepository.update(
+          { id: In(tokenBatch.map((item) => item.id)) },
+          { lastUsedAt: now },
+        );
+      } catch (error) {
+        this.logger.error(
+          `Expo push send failed: user=${userId}, batch=${start}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
+  }
+
+  private maskToken(token: string) {
+    if (token.length <= 10) {
+      return token;
+    }
+
+    return `${token.slice(0, 6)}...${token.slice(-4)}`;
   }
 }

@@ -8,4 +8,5 @@ export * from './coupon-type.enum';
 export * from './coupon-status.enum';
 export * from './redemption-status.enum';
 export * from './notification-type.enum';
+export * from './device-platform.enum';
 export * from './livestream-status.enum';
