@@ -18,7 +18,14 @@ import {
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags, ApiConsumes, ApiNotFoundResponse } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
-import { CreateProductDto, ImageSearchDto, ImageSearchResultDto, VoiceSearchResponseDto } from './dtos';
+import {
+  CreateProductDto,
+  CreateProductTryonAssetDto,
+  ImageSearchDto,
+  ImageSearchResultDto,
+  UpdateProductTryonAssetDto,
+  VoiceSearchResponseDto,
+} from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
@@ -110,6 +117,40 @@ export class ProductsController {
     }
 
     return this.productsService.searchByVoice(file.buffer, file.originalname);
+  }
+
+  @Get(':id/tryon-assets')
+  @ApiOperation({ summary: 'Get active DeepAR try-on assets for a product' })
+  findTryonAssets(@Param('id', ParseIntPipe) id: number) {
+    return this.productsService.findTryonAssets(id);
+  }
+
+  @Post(':id/tryon-assets')
+  @ApiOperation({ summary: 'Create a DeepAR try-on asset for a product' })
+  createTryonAsset(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() createTryonAssetDto: CreateProductTryonAssetDto,
+  ) {
+    return this.productsService.createTryonAsset(id, createTryonAssetDto);
+  }
+
+  @Patch(':id/tryon-assets/:assetId')
+  @ApiOperation({ summary: 'Update a DeepAR try-on asset for a product' })
+  updateTryonAsset(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('assetId', ParseIntPipe) assetId: number,
+    @Body() updateTryonAssetDto: UpdateProductTryonAssetDto,
+  ) {
+    return this.productsService.updateTryonAsset(id, assetId, updateTryonAssetDto);
+  }
+
+  @Delete(':id/tryon-assets/:assetId')
+  @ApiOperation({ summary: 'Soft delete a DeepAR try-on asset for a product' })
+  removeTryonAsset(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('assetId', ParseIntPipe) assetId: number,
+  ) {
+    return this.productsService.removeTryonAsset(id, assetId);
   }
 
   @Get(':id')

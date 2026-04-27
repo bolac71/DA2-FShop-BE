@@ -5,7 +5,8 @@ import { DataSource, ILike, In, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { ProductVariant } from './entities/product-variant.entity';
-import { CreateProductDto, ImageSearchResultDto, VoiceSearchResponseDto } from './dtos';
+import { ProductTryonAsset } from './entities/product-tryon-asset.entity';
+import { CreateProductDto, CreateProductTryonAssetDto, ImageSearchResultDto, UpdateProductTryonAssetDto, VoiceSearchResponseDto } from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { BrandsService } from '../brands/brands.service';
 import { CategoriesService } from '../categories/categories.service';
@@ -28,6 +29,8 @@ export class ProductsService {
     private productImagesRepository: Repository<ProductImage>,
     @InjectRepository(ProductVariant)
     private productVariantsRepository: Repository<ProductVariant>,
+    @InjectRepository(ProductTryonAsset)
+    private productTryonAssetsRepository: Repository<ProductTryonAsset>,
     @InjectRepository(InventoryTransaction)
     private inventoryTransactionRepository: Repository<InventoryTransaction>,
     @InjectRepository(Inventory)
@@ -367,6 +370,106 @@ export class ProductsService {
     });
   }
 
+  async findTryonAssets(productId: number, activeOnly = true) {
+    await this.ensureActiveProduct(productId);
+
+    return this.productTryonAssetsRepository.find({
+      where: {
+        productId,
+        ...(activeOnly ? { isActive: true } : {}),
+      },
+      relations: ['variant'],
+      order: {
+        id: 'ASC',
+      },
+    });
+  }
+
+  async createTryonAsset(productId: number, dto: CreateProductTryonAssetDto) {
+    await this.ensureActiveProduct(productId);
+    await this.ensureVariantBelongsToProduct(productId, dto.variantId);
+
+    const asset = this.productTryonAssetsRepository.create({
+      productId,
+      variantId: dto.variantId ?? null,
+      assetType: dto.assetType,
+      displayName: dto.displayName.trim(),
+      deeparEffectUrl: dto.deeparEffectUrl.trim(),
+      thumbnailUrl: dto.thumbnailUrl?.trim() || null,
+      isActive: dto.isActive ?? true,
+    });
+
+    return this.productTryonAssetsRepository.save(asset);
+  }
+
+  async updateTryonAsset(
+    productId: number,
+    assetId: number,
+    dto: UpdateProductTryonAssetDto,
+  ) {
+    await this.ensureActiveProduct(productId);
+
+    const asset = await this.productTryonAssetsRepository.findOne({
+      where: { id: assetId, productId },
+    });
+
+    if (!asset) {
+      throw new HttpException(
+        `Try-on asset with id ${assetId} not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (dto.variantId !== undefined) {
+      await this.ensureVariantBelongsToProduct(productId, dto.variantId);
+      asset.variantId = dto.variantId ?? null;
+    }
+
+    if (dto.assetType !== undefined) {
+      asset.assetType = dto.assetType;
+    }
+
+    if (dto.displayName !== undefined) {
+      const displayName = dto.displayName.trim();
+      if (!displayName) {
+        throw new HttpException('Display name can not be empty', HttpStatus.BAD_REQUEST);
+      }
+      asset.displayName = displayName;
+    }
+
+    if (dto.deeparEffectUrl !== undefined) {
+      asset.deeparEffectUrl = dto.deeparEffectUrl.trim();
+    }
+
+    if (dto.thumbnailUrl !== undefined) {
+      asset.thumbnailUrl = dto.thumbnailUrl?.trim() || null;
+    }
+
+    if (dto.isActive !== undefined) {
+      asset.isActive = dto.isActive;
+    }
+
+    return this.productTryonAssetsRepository.save(asset);
+  }
+
+  async removeTryonAsset(productId: number, assetId: number) {
+    await this.ensureActiveProduct(productId);
+
+    const asset = await this.productTryonAssetsRepository.findOne({
+      where: { id: assetId, productId },
+    });
+
+    if (!asset) {
+      throw new HttpException(
+        `Try-on asset with id ${assetId} not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    asset.isActive = false;
+    return this.productTryonAssetsRepository.save(asset);
+  }
+
   async searchByImage(
     fileBuffer: Buffer,
     fileName: string,
@@ -383,6 +486,35 @@ export class ProductsService {
 
     // Forward request to AI service
     return await this.aiService.searchByImage(fileBuffer, fileName, topK);
+  }
+
+  private async ensureActiveProduct(productId: number) {
+    const product = await this.productsRepository.findOne({
+      where: { id: productId, isActive: true },
+    });
+
+    if (!product) {
+      throw new HttpException(`Product with id ${productId} not found`, HttpStatus.NOT_FOUND);
+    }
+
+    return product;
+  }
+
+  private async ensureVariantBelongsToProduct(productId: number, variantId?: number | null) {
+    if (!variantId) {
+      return;
+    }
+
+    const variant = await this.productVariantsRepository.findOne({
+      where: { id: variantId, productId, isActive: true },
+    });
+
+    if (!variant) {
+      throw new HttpException(
+        `Variant with id ${variantId} does not belong to product ${productId}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 
   async searchByVoice(
