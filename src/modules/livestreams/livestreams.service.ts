@@ -425,6 +425,95 @@ export class LivestreamsService {
     return this.livestreamOrderRepository.save(livestreamOrder);
   }
 
+  async getSummary(livestreamId: number) {
+    const livestream = await this.livestreamRepository.findOne({
+      where: { id: livestreamId, isActive: true },
+      relations: [
+        'pinnedProducts',
+        'pinnedProducts.product',
+        'livestreamOrders',
+        'livestreamOrders.order',
+        'livestreamOrders.order.items',
+        'livestreamOrders.order.items.variant',
+      ],
+    });
+
+    if (!livestream) {
+      throw new HttpException('Livestream not found', HttpStatus.NOT_FOUND);
+    }
+
+    const durationSeconds =
+      livestream.startedAt && livestream.endedAt
+        ? Math.floor(
+            (livestream.endedAt.getTime() - livestream.startedAt.getTime()) / 1000,
+          )
+        : null;
+
+    const totalComments = await this.livestreamCommentRepository.count({
+      where: { livestreamId, isActive: true },
+    });
+
+    const orders = livestream.livestreamOrders.map((lo) => lo.order).filter(Boolean);
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce(
+      (sum, o) => sum + Number(o.totalAmount ?? 0),
+      0,
+    );
+
+    const productMap = new Map<
+      number,
+      { productId: number; name: string; imageUrl?: string; unitsSold: number; revenue: number }
+    >();
+
+    for (const lo of livestream.livestreamOrders) {
+      const order = lo.order;
+      if (!order?.items) continue;
+
+      for (const item of order.items) {
+        const productId = item.variant?.productId;
+        if (!productId) continue;
+
+        const existing = productMap.get(productId);
+        const itemRevenue = Number(item.price ?? 0) * (item.quantity ?? 0);
+
+        if (existing) {
+          existing.unitsSold += item.quantity ?? 0;
+          existing.revenue += itemRevenue;
+        } else {
+          const pinnedProduct = livestream.pinnedProducts.find(
+            (pp) => pp.productId === productId,
+          );
+          productMap.set(productId, {
+            productId,
+            name: pinnedProduct?.product?.name ?? `Product #${productId}`,
+            imageUrl: (pinnedProduct?.product as any)?.images?.[0]?.imageUrl,
+            unitsSold: item.quantity ?? 0,
+            revenue: itemRevenue,
+          });
+        }
+      }
+    }
+
+    const topProducts = [...productMap.values()].sort(
+      (a, b) => b.revenue - a.revenue,
+    );
+
+    return {
+      livestreamId,
+      title: livestream.title,
+      status: livestream.status,
+      scheduledStartAt: livestream.scheduledStartAt,
+      startedAt: livestream.startedAt,
+      endedAt: livestream.endedAt,
+      durationSeconds,
+      totalViewers: livestream.totalViewers,
+      totalComments,
+      totalOrders,
+      totalRevenue,
+      topProducts,
+    };
+  }
+
   private async ensureHostAccess(livestreamId: number, hostId: number) {
     const livestream = await this.livestreamRepository.findOneBy({
       id: livestreamId,

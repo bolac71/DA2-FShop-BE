@@ -129,6 +129,15 @@ export class LivestreamsController {
     return this.livestreamsService.findOne(id);
   }
 
+  @Get(':id/summary')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get post-session summary for a livestream' })
+  getSummary(@Param('id', ParseIntPipe) id: number) {
+    return this.livestreamsService.getSummary(id);
+  }
+
   @Get(':id/comments')
   @ApiOperation({ summary: 'Get livestream comments' })
   getComments(
