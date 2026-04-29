@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ImageSearchResultDto, VoiceSearchResponseDto } from '../products/dtos';
+import type { ImageSearchResultDto, VoiceSearchResponseDto, VoiceTranscriptionResponseDto } from '../products/dtos';
 
 export interface AiChatHistoryItem {
   role: 'user' | 'assistant';
@@ -206,6 +206,14 @@ export class AiService {
       const raw = (await response.json()) as {
         transcribed_text?: unknown;
         products?: unknown;
+        normalized_query?: unknown;
+        rewritten_query?: unknown;
+        intent?: unknown;
+        filters?: unknown;
+        asr_confidence?: unknown;
+        asr?: unknown;
+        latency_ms?: unknown;
+        search_debug?: unknown;
       };
 
       const products: ImageSearchResultDto[] = Array.isArray(raw.products)
@@ -215,6 +223,22 @@ export class AiService {
       const data: VoiceSearchResponseDto = {
         transcribed_text: typeof raw.transcribed_text === 'string' ? raw.transcribed_text : '',
         products,
+        normalized_query: typeof raw.normalized_query === 'string' ? raw.normalized_query : undefined,
+        rewritten_query: typeof raw.rewritten_query === 'string' ? raw.rewritten_query : undefined,
+        intent: typeof raw.intent === 'string' ? raw.intent : undefined,
+        filters: raw.filters && typeof raw.filters === 'object'
+          ? (raw.filters as Record<string, unknown>)
+          : undefined,
+        asr_confidence: typeof raw.asr_confidence === 'number' ? raw.asr_confidence : undefined,
+        asr: raw.asr && typeof raw.asr === 'object'
+          ? (raw.asr as VoiceSearchResponseDto['asr'])
+          : undefined,
+        latency_ms: typeof raw.latency_ms === 'number' ? raw.latency_ms : undefined,
+        search_debug: raw.search_debug && typeof raw.search_debug === 'object'
+          ? (raw.search_debug as Record<string, unknown>)
+          : raw.search_debug === null
+            ? null
+            : undefined,
       };
 
       this.logger.debug(`Voice search completed, found ${products.length} results`);
@@ -239,6 +263,83 @@ export class AiService {
 
       throw new HttpException(
         'Voice processing failed. Please try recording again.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  async transcribeVoice(
+    fileBuffer: Buffer,
+    fileName: string,
+  ): Promise<VoiceTranscriptionResponseDto> {
+    try {
+      const formData = new FormData();
+      const uint8Array = new Uint8Array(fileBuffer);
+      const blob = new Blob([uint8Array]);
+      formData.append('file', blob, fileName);
+
+      this.logger.debug(`Sending voice transcription request to AI service: ${this.aiServiceUrl}/transcribe/voice`);
+
+      const response = await fetch(`${this.aiServiceUrl}/transcribe/voice`, {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!response.ok)
+        throw new HttpException(`AI service returned status ${response.status}`, HttpStatus.BAD_GATEWAY);
+
+      const raw = (await response.json()) as {
+        transcribed_text?: unknown;
+        normalized_query?: unknown;
+        rewritten_query?: unknown;
+        intent?: unknown;
+        filters?: unknown;
+        asr_confidence?: unknown;
+        asr?: unknown;
+        latency_ms?: unknown;
+        search_debug?: unknown;
+      };
+
+      return {
+        transcribed_text: typeof raw.transcribed_text === 'string' ? raw.transcribed_text : '',
+        normalized_query: typeof raw.normalized_query === 'string' ? raw.normalized_query : undefined,
+        rewritten_query: typeof raw.rewritten_query === 'string' ? raw.rewritten_query : undefined,
+        intent: typeof raw.intent === 'string' ? raw.intent : undefined,
+        filters: raw.filters && typeof raw.filters === 'object'
+          ? (raw.filters as Record<string, unknown>)
+          : undefined,
+        asr_confidence: typeof raw.asr_confidence === 'number' ? raw.asr_confidence : undefined,
+        asr: raw.asr && typeof raw.asr === 'object'
+          ? (raw.asr as VoiceTranscriptionResponseDto['asr'])
+          : undefined,
+        latency_ms: typeof raw.latency_ms === 'number' ? raw.latency_ms : undefined,
+        search_debug: raw.search_debug && typeof raw.search_debug === 'object'
+          ? (raw.search_debug as Record<string, unknown>)
+          : raw.search_debug === null
+            ? null
+            : undefined,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Voice transcription failed: ${errorMessage}`);
+
+      if (errorMessage.includes('timeout')) {
+        throw new HttpException(
+          'Voice transcription timeout. Please try again with a shorter audio clip.',
+          HttpStatus.GATEWAY_TIMEOUT,
+        );
+      }
+
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+        throw new HttpException(
+          'AI service is currently unavailable. Please try again later.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+
+      throw new HttpException(
+        'Voice transcription failed. Please try recording again.',
         HttpStatus.BAD_REQUEST,
       );
     }

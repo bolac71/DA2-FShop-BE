@@ -6,7 +6,7 @@ import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { ProductVariant } from './entities/product-variant.entity';
 import { ProductTryonAsset } from './entities/product-tryon-asset.entity';
-import { CreateProductDto, CreateProductTryonAssetDto, ImageSearchResultDto, UpdateProductTryonAssetDto, VoiceSearchResponseDto } from './dtos';
+import { CreateProductDto, CreateProductTryonAssetDto, ImageSearchResultDto, UpdateProductTryonAssetDto, VoiceSearchResponseDto, VoiceTranscriptionResponseDto } from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { BrandsService } from '../brands/brands.service';
 import { CategoriesService } from '../categories/categories.service';
@@ -530,5 +530,20 @@ export class ProductsService {
     }
 
     return await this.aiService.searchByVoice(fileBuffer, fileName);
+  }
+
+  async transcribeVoice(
+    fileBuffer: Buffer,
+    fileName: string,
+  ): Promise<VoiceTranscriptionResponseDto> {
+    const MAX_AUDIO_SIZE = 10 * 1024 * 1024;
+    if (fileBuffer.length > MAX_AUDIO_SIZE) {
+      throw new HttpException(
+        'Audio size exceeds maximum limit of 10MB',
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
+
+    return await this.aiService.transcribeVoice(fileBuffer, fileName);
   }
 }

@@ -25,6 +25,7 @@ import {
   ImageSearchResultDto,
   UpdateProductTryonAssetDto,
   VoiceSearchResponseDto,
+  VoiceTranscriptionResponseDto,
 } from './dtos';
 import { QueryDto } from 'src/dtos/query.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
@@ -117,6 +118,20 @@ export class ProductsController {
     }
 
     return this.productsService.searchByVoice(file.buffer, file.originalname);
+  }
+
+  @Post('transcribe/voice')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Transcribe a voice query without running product search' })
+  async transcribeVoice(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<VoiceTranscriptionResponseDto> {
+    if (!file) {
+      throw new HttpException('Audio file is required', HttpStatus.BAD_REQUEST);
+    }
+
+    return this.productsService.transcribeVoice(file.buffer, file.originalname);
   }
 
   @Get(':id/tryon-assets')
