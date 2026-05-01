@@ -1,8 +1,11 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
-import { Wishlist, User, Product } from 'src/entities';
+import { Wishlist, User, Product } from '../../entities';
+
 import { Repository, DataSource } from 'typeorm';
 import { CreateWishlistsDto } from './dtos/create-wishlits.dto';
+import { UserInteractionsService } from '../user-interactions/user-interactions.service';
+import { InteractionType } from '../user-interactions/entities/user-interaction.entity';
 
 @Injectable()
 export class WishlistsService {
@@ -11,10 +14,10 @@ export class WishlistsService {
     private wishlistsRepository: Repository<Wishlist>,
     @InjectDataSource() private dataSource: DataSource,
     @InjectRepository(User) private userRepository: Repository<User>,
+    private readonly interactionsService: UserInteractionsService,
   ) { }
 
   async getMyWishlists(userId: number) {
-    console.log(userId);
     const wishlists = await this.wishlistsRepository.find({
       where: { user: { id: userId } },
       relations: [
@@ -60,6 +63,13 @@ export class WishlistsService {
 
         const wishlist = manager.create(Wishlist, { user, product });
         const saved = await manager.save(wishlist);
+
+        // Record interaction
+        this.interactionsService.recordInteraction(
+          userId,
+          productId,
+          InteractionType.WISHLIST,
+        ).catch(err => console.error('Failed to record wishlist interaction:', err));
 
         return {
           message: 'Wishlist item added',

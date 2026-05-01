@@ -24,6 +24,7 @@ export { Review, ReviewImage, ReviewVote } from '../modules/reviews/entities';
 export { Post, PostComment, PostImage, PostLike, Hashtag, PostHashtag } from '../modules/posts/entities';
 export { Notification } from '../modules/notifications/entities/notification.entity';
 export { DeviceToken } from '../modules/notifications/entities/device-token.entity';
+export { UserInteraction } from '../modules/user-interactions/entities/user-interaction.entity';
 export { Conversation } from '../modules/chats/entities/conversation.entity';
 export { Message } from '../modules/chats/entities/message.entity';
 export { AiChatSession, AiChatMessage } from '../modules/ai-chatbot/entities';

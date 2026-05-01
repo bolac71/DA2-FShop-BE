@@ -140,11 +140,11 @@ export class AiService {
       const uint8Array = new Uint8Array(fileBuffer);
       const blob = new Blob([uint8Array]);
       formData.append('file', blob, fileName);
-      formData.append('top_k', String(topK));
 
-      this.logger.debug(`Sending image search request to AI service: ${this.aiServiceUrl}/search/image`);
+      const searchUrl = `${this.aiServiceUrl}/search/image?top_k=${encodeURIComponent(String(topK))}`;
+      this.logger.debug(`Sending image search request to AI service: ${searchUrl}`);
 
-      const response = await fetch(`${this.aiServiceUrl}/search/image`, {
+      const response = await fetch(searchUrl, {
         method: 'POST',
         body: formData,
         signal: AbortSignal.timeout(30000), // 30 seconds timeout

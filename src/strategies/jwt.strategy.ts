@@ -23,7 +23,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: JwtPayload): JwtPayload {
-    return payload;
+  validate(payload: JwtPayload): JwtPayload & { id: number } {
+    // Normalize payload to include `id` for compatibility across codebase
+    // (some parts expect `user.sub`, others expect `user.id`).
+    return {
+      ...payload,
+      id: payload.sub,
+    } as JwtPayload & { id: number };
   }
 }

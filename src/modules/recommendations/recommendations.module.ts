@@ -8,6 +8,8 @@ import { ProductsModule } from '../products/products.module';
 import { ProductVariant } from '../products/entities/product-variant.entity';
 import { Coupon } from '../coupons/entities';
 import { InventoryTransaction } from '../inventories/entities/inventory-transaction.entity';
+import { HttpModule } from '@nestjs/axios';
+import { UserInteractionsModule } from '../user-interactions/user-interactions.module';
 import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
@@ -15,7 +17,10 @@ import { CouponsModule } from '../coupons/coupons.module';
     TypeOrmModule.forFeature([OrderItem, Product, ProductVariant, InventoryTransaction, Coupon]),
     ProductsModule,
     CouponsModule,
+    HttpModule,
+    UserInteractionsModule,
   ],
+
   providers: [RecommendationsService],
   controllers: [RecommendationsController],
 })

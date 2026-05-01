@@ -37,6 +37,8 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { RecommendationsModule } from './modules/recommendations/recommendations.module';
+import { UserInteractionsModule } from './modules/user-interactions/user-interactions.module';
+
 
 @Module({
   imports: [
@@ -78,7 +80,9 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
     PaymentsModule,
     ModerationModule,
     RecommendationsModule,
+    UserInteractionsModule,
   ],
+
   controllers: [AppController],
   providers: [
     AppService,

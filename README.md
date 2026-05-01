@@ -382,6 +382,14 @@ npm run start:dev
 | `REDIS_PORT` | number | `6379` | Cổng Redis |
 | `REDIS_PASSWORD` | string | - | Mật khẩu Redis (nếu cần) |
 
+### AI Service Configuration (Optional)
+
+| Biến | Kiểu | Mặc Định | Mô Tả |
+|------|------|---------|-------|
+| `AI_SERVICE_URL` | string | `http://localhost:8000` | URL của AI service dùng cho recommendations và chatbot |
+| `AI_SERVER_URL` | string | `http://localhost:8000` | Alias cũ cho AI service URL |
+| `AI_RECOMMENDATION_TIMEOUT_MS` | number | `5000` | Thời gian chờ tối đa khi gọi AI recommendation API |
+
 ### STORAGE Configuration (Optional)
 
 | Biến | Kiểu | Mô Tả |

@@ -1,9 +1,12 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User, ProductVariant, Inventory } from 'src/entities';
+import { User, ProductVariant, Inventory } from '../../entities';
+
 import { Repository } from 'typeorm';
 import { CreateCartDto, CartItemDto } from './dtos';
 import { Cart, CartItem } from './entities';
+import { UserInteractionsService } from '../user-interactions/user-interactions.service';
+import { InteractionType } from '../user-interactions/entities/user-interaction.entity';
 
 @Injectable()
 export class CartsService {
@@ -13,6 +16,7 @@ export class CartsService {
     @InjectRepository(User) private userRepository: Repository<User>,
     @InjectRepository(ProductVariant) private productVariantRepository: Repository<ProductVariant>,
     @InjectRepository(Inventory) private inventoryRepository: Repository<Inventory>,
+    private readonly interactionsService: UserInteractionsService,
   ) { }
 
   async create(createCartDto: CreateCartDto) {
@@ -26,12 +30,18 @@ export class CartsService {
 
   async addToCart(cartId: number, cartItemDto: CartItemDto) {
     const { variantId, quantity } = cartItemDto;
-    const cart = await this.cartRepository.findOne({ where: { id: cartId }, relations: ['items', 'items.variant'] });
+    const cart = await this.cartRepository.findOne({ 
+      where: { id: cartId }, 
+      relations: ['items', 'items.variant', 'user'] 
+    });
     if (!cart) throw new HttpException('Cart not found', HttpStatus.NOT_FOUND);
     const inventory = await this.inventoryRepository.findOne({ where: { variant: { id: variantId } } });
     if (!inventory) throw new HttpException('Inventory not found for this variant', HttpStatus.NOT_FOUND);
 
-    const variant = await this.productVariantRepository.findOne({ where: { id: variantId } });
+    const variant = await this.productVariantRepository.findOne({ 
+      where: { id: variantId },
+      relations: ['product']
+    });
     if (!variant) throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
     if (quantity > inventory.quantity) throw new HttpException('Not enough quantity', HttpStatus.BAD_REQUEST);
 
@@ -48,6 +58,17 @@ export class CartsService {
       })
       await this.cartItemRepository.save(cartItem);
     }
+    console.log(`Added to cart: cart ${cartId}, variant ${variantId}, quantity ${quantity}`);
+    // Record interaction
+    if (cart.user && variant.product) {
+console.log(`Recording add_to_cart interaction for user ${cart.user.id} and product ${variant.product.id}`);
+      this.interactionsService.recordInteraction(
+        cart.user.id,
+        variant.product.id,
+        InteractionType.ADD_TO_CART,
+      ).catch(err => console.error('Failed to record add_to_cart interaction:', err));
+    }
+
     return this.cartRepository.findOne({ where: { id: cart.id }, relations: ['items', 'items.variant'] });
   }
 

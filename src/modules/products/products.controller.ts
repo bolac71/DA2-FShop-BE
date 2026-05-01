@@ -16,6 +16,8 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { UseGuards } from '@nestjs/common';
+import { OptionalJwtAuthGuard } from 'src/guards/optional-jwt-auth.guard';
 import { ApiOperation, ApiTags, ApiConsumes, ApiNotFoundResponse } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import {
@@ -30,9 +32,12 @@ import {
 import { QueryDto } from 'src/dtos/query.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
+import { InteractionInterceptor } from '../user-interactions/interaction.interceptor';
+
 @ApiTags('Products')
 @Controller('products')
 export class ProductsController {
+
   constructor(
     private readonly productsService: ProductsService,
     private readonly cloudinaryService: CloudinaryService,
@@ -169,9 +174,12 @@ export class ProductsController {
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
+  @UseInterceptors(InteractionInterceptor)
   @ApiOperation({ summary: 'Get a single product by ID with all images and variants' })
   @ApiNotFoundResponse({ description: 'Product not found' })
   findOne(@Param('id', ParseIntPipe) id: number) {
+
     return this.productsService.findOne(id);
   }
 

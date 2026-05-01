@@ -1,18 +1,24 @@
 import { HttpException, HttpStatus, Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { Address, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User, Payment } from 'src/entities';
+import { Address, Cart, CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, Order, OrderItem, ProductVariant, User, Payment } from '../../entities';
+
+import { UserInteractionsService } from '../user-interactions/user-interactions.service';
+import { InteractionType } from '../user-interactions/entities/user-interaction.entity';
+
 import { Brackets, DataSource, FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { CreateOrderDto } from './dtos/create-order.dto';
-import { CouponStatus, CouponType, NotificationType, RedemptionStatus, ShippingMethod, PaymentStatus, PaymentMethod } from 'src/constants';
-import { OrderStatus } from 'src/constants/order-status.enum';
-import { InventoryType } from 'src/constants/inventory-type.enum';
-import { OrderQueryDto } from 'src/dtos';
-import { ActorRole, ensureTransitionAllowed } from 'src/utils/order-status.rules';
+import { CouponStatus, CouponType, NotificationType, RedemptionStatus, ShippingMethod, PaymentStatus, PaymentMethod } from '../../constants';
+import { OrderStatus } from '../../constants/order-status.enum';
+import { InventoryType } from '../../constants/inventory-type.enum';
+import { OrderQueryDto } from '../../dtos';
+import { ActorRole, ensureTransitionAllowed } from '../../utils/order-status.rules';
+
 import { InventoriesModule } from '../inventories/inventories.module';
 import { InventoriesService } from '../inventories/inventories.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Livestream, LivestreamOrder } from '../livestreams/entities';
-import { LivestreamStatus } from 'src/constants/livestream-status.enum';
+import { LivestreamStatus } from '../../constants/livestream-status.enum';
+
 
 @Injectable()
 export class OrdersService {
@@ -28,8 +34,10 @@ export class OrdersService {
     private readonly paymentRepository: Repository<Payment>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly inventoriesService: InventoriesService,
-    private notificationService: NotificationsService
+    private notificationService: NotificationsService,
+    private readonly interactionsService: UserInteractionsService,
   ) { }
+
 
   private calculateShippingFee(shippingMethod: ShippingMethod): number {
     switch (shippingMethod) {
@@ -98,7 +106,8 @@ export class OrdersService {
   async create(userId: number, createOrderDto: CreateOrderDto) {
     this.logger.log(`Create order start: user=${userId}, address=${createOrderDto.addressId}, items=${createOrderDto.items.length}`);
 
-    const createdOrder = await this.dataSource.manager.transaction(async (manager) => {
+    const result = await this.dataSource.manager.transaction(async (manager) => {
+
       // Implementation for creating order within a transaction
       const { addressId, couponId, note, shippingMethod, items } = createOrderDto;
 
@@ -183,6 +192,7 @@ export class OrdersService {
         await manager.save(orderItem);
         subtotal += Number(variant.product.price) * item.quantity;
         orderedProductIds.push(variant.product.id);
+
 
         inventory.quantity -= item.quantity;
         await manager.save(inventory);
@@ -278,8 +288,12 @@ export class OrdersService {
       }
 
       
-      return order
+      return { order, orderedProductIds };
     });
+
+    const createdOrder = result.order;
+    const orderedProductIds = result.orderedProductIds;
+
 
     this.logger.log(`Create order committed: order=${createdOrder.id}, user=${userId}, total=${createdOrder.totalAmount}`);
 
@@ -296,8 +310,24 @@ export class OrdersService {
       this.logger.error(`Order notification failed: order=${createdOrder.id}, user=${userId}`, error instanceof Error ? error.stack : undefined);
     }
 
+    // Record interactions for each product in the order
+    try {
+      const uniqueProductIds = Array.from(new Set(orderedProductIds));
+      for (const pid of uniqueProductIds) {
+        this.interactionsService.recordInteraction(
+          userId,
+          pid,
+          InteractionType.PURCHASE,
+        ).catch(err => console.error(`Failed to record purchase interaction for product ${pid}:`, err));
+      }
+    } catch (error) {
+      this.logger.error('Failed to process purchase interactions', error instanceof Error ? error.stack : undefined);
+    }
+
+
     return createdOrder;
   }
+
 
   async getMyOrders(userId: number, query: OrderQueryDto) {
     const { page, limit, sortBy = 'id', sortOrder = 'DESC', status, search } = query;
