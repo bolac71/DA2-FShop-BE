@@ -52,6 +52,7 @@ export class RecommendationsService {
    * Get personalized recommendations for a user based on their behavior (Hybrid AI)
    */
   async getPersonalizedRecommendations(userId: number, limit: number = 10) {
+    const loggerContext = `getPersonalizedRecommendations(userId=${userId}, limit=${limit})`;
     try {
       // 1. Get recent interactions (30 days)
       const interactions = await this.interactionsService.getRecentInteractions(userId, 30);
@@ -85,10 +86,10 @@ export class RecommendationsService {
       // 3. Call AI Server
       let recommendedProductIds: number[] | null = null;
       try {
-        console.log(  {
-              interactions: aiInteractions,
-              limit,
-            })
+        console.log({
+          interactions: aiInteractions,
+          limit,
+        });
         const response = await firstValueFrom(
           this.httpService.post(
             `${this.aiServerUrl}/recommend/profile-based`,
@@ -120,11 +121,29 @@ export class RecommendationsService {
       });
 
       // Maintain AI order
-      const orderedProducts = recommendedProductIds
+      let orderedProducts = recommendedProductIds
         .map(id => products.find(p => p.id === id))
         .filter(p => !!p);
 
-      const processedData = await this.processProducts(orderedProducts);
+      // 5. If we don't have enough products, fill with trending to reach the limit
+      if (orderedProducts.length < limit) {
+        const missingCount = limit - orderedProducts.length;
+        const existingProductIds = new Set(orderedProducts.map(p => p.id));
+        
+        this.logger.log(`AI returned ${orderedProducts.length} products, fetching ${missingCount} trending products to reach limit of ${limit}`);
+        
+        const trendingResult = await this.getTrendingProducts(missingCount * 2);
+        const trendingProducts = trendingResult.data as Product[];
+        
+        for (const product of trendingProducts) {
+          if (!existingProductIds.has(product.id) && orderedProducts.length < limit) {
+            orderedProducts.push(product);
+            existingProductIds.add(product.id);
+          }
+        }
+      }
+
+      const processedData = await this.processProducts(orderedProducts.slice(0, limit));
 
       return {
         pagination: {
