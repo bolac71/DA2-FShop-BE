@@ -1,15 +1,18 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, EntityManager, ILike, In, IsNull, Repository } from 'typeorm';
+import { Brackets, DataSource, EntityManager, ILike, In, IsNull, Not, Repository } from 'typeorm';
 import { Hashtag, PostComment, PostHashtag, PostImage, PostLike, Post } from './entities';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
 import { User } from 'src/entities';
 import { plainToInstance } from 'class-transformer';
 import { QueryDto } from 'src/dtos';
+import { ModerationService } from '../moderation/moderation.service';
 
 @Injectable()
 export class PostsService {
+  private readonly logger = new Logger(PostsService.name);
+
   constructor(
     @InjectRepository(Post) private postRepository: Repository<Post>,
     @InjectRepository(PostImage)
@@ -23,6 +26,7 @@ export class PostsService {
     private postHashtagRepository: Repository<PostHashtag>,
     private dataSource: DataSource,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly moderationService: ModerationService,
   ) {}
 
   async create(
@@ -540,6 +544,10 @@ export class PostsService {
       post.totalComments++;
       await manager.save(post);
 
+      this.moderationService
+        .moderateContent(createCommentDto.content, 'post_comment', savedComment.id, userId)
+        .catch((err: Error) => this.logger.warn(`Comment moderation failed: ${err.message}`));
+
       return plainToInstance(PostComment, savedComment);
     })
   }
@@ -553,7 +561,7 @@ export class PostsService {
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
 
     const [data, total] = await this.postCommentRepository.findAndCount({
-      where: { postId, isActive: true, parentComment: IsNull() },
+      where: { postId, isActive: true, parentComment: IsNull(), moderationStatus: Not('flagged') },
       relations: ['user'],
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },
@@ -712,6 +720,10 @@ export class PostsService {
 
       const savedReply = await manager.save(reply);
 
+      this.moderationService
+        .moderateContent(dto.content, 'post_comment', savedReply.id, userId)
+        .catch((err: Error) => this.logger.warn(`Reply moderation failed: ${err.message}`));
+
       // 4. Update parent comment replyCount
       parentComment.replyCount += 1;
       await manager.save(parentComment);
@@ -734,7 +746,7 @@ export class PostsService {
 
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
     const [data, total] = await this.postCommentRepository.findAndCount({
-      where: { parentComment: { id: commentId }, content: search ? ILike(`%${search}%`) : undefined, isActive: true },
+      where: { parentComment: { id: commentId }, content: search ? ILike(`%${search}%`) : undefined, isActive: true, moderationStatus: Not('flagged') },
       relations: ['user'],
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },

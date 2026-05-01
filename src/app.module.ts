@@ -35,6 +35,7 @@ import { AiChatbotModule } from './modules/ai-chatbot/ai-chatbot.module';
 import { LivestreamsModule } from './modules/livestreams/livestreams.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { ModerationModule } from './modules/moderation/moderation.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     AiChatbotModule,
     DashboardModule,
     PaymentsModule,
+    ModerationModule,
   ],
   controllers: [AppController],
   providers: [

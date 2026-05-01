@@ -55,6 +55,14 @@ export class PostComment {
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'approved', 'flagged'],
+    default: 'pending',
+    name: 'moderation_status',
+  })
+  moderationStatus: 'pending' | 'approved' | 'flagged';
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
