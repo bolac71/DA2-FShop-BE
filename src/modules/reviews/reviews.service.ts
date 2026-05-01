@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Review, ReviewImage, ReviewVote } from './entities';
-import { DataSource, Like, Repository } from 'typeorm';
+import { DataSource, Like, Not, Repository } from 'typeorm';
 import { CreateReviewDto, UpdateReviewDto, VoteReviewDto } from './dtos';
 import { Order, Product, User } from 'src/entities';
 import { ProductVariant } from 'src/modules/products/entities/product-variant.entity';
@@ -13,14 +13,18 @@ import { plainToInstance } from 'class-transformer';
 import { QueryDto } from 'src/dtos';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
+import { ModerationService } from '../moderation/moderation.service';
 
 @Injectable()
 export class ReviewsService {
+  private readonly logger = new Logger(ReviewsService.name);
+
   constructor(
     @InjectRepository(Review) private reviewRepository: Repository<Review>,
     @InjectRedis() private readonly redis: Redis,
     private dataSource: DataSource,
     private cloudinaryService: CloudinaryService,
+    private moderationService: ModerationService,
   ) {}
 
   
@@ -93,6 +97,13 @@ export class ReviewsService {
       }
 
       await this.updateProductRating(manager, variant.productId);
+
+      // Fire-and-forget moderation — does not delay the user response
+      if (createReviewDto.comment?.trim()) {
+        this.moderationService
+          .moderateContent(createReviewDto.comment, 'review', savedReview.id, userId)
+          .catch((err: Error) => this.logger.warn(`Review moderation failed: ${err.message}`));
+      }
 
       return plainToInstance(Review, savedReview);
     })
@@ -219,6 +230,7 @@ export class ReviewsService {
       .leftJoinAndSelect('r.votes', 'vote')
       .where('v.product = :productId', { productId })
       .andWhere('r.isActive = :isActive', { isActive: true })
+      .andWhere('r.moderationStatus != :flagged', { flagged: 'flagged' })
       .orderBy('r.createdAt', 'DESC')
       .getMany();
 

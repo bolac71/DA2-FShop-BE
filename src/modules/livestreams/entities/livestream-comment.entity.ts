@@ -29,6 +29,14 @@ export class LivestreamComment {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'approved', 'flagged'],
+    default: 'pending',
+    name: 'moderation_status',
+  })
+  moderationStatus: 'pending' | 'approved' | 'flagged';
+
   @ManyToOne(() => Livestream, (livestream) => livestream.comments, {
     onDelete: 'CASCADE',
   })

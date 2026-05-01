@@ -50,6 +50,14 @@ export class Review {
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'approved', 'flagged'],
+    default: 'pending',
+    name: 'moderation_status',
+  })
+  moderationStatus: 'pending' | 'approved' | 'flagged';
+
   @OneToMany(() => ReviewImage, (image) => image.review, { cascade: true })
   @Exclude()
   images: ReviewImage[];
