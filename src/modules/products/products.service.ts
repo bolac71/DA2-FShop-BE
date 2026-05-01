@@ -20,6 +20,8 @@ import { Coupon } from '../coupons/entities';
 import { CouponsService } from '../coupons/coupons.service';
 import { AiService } from '../ai/ai.service';
 
+import { getBestCouponForProduct } from 'src/utils/product.util';
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -44,65 +46,6 @@ export class ProductsService {
     private aiService: AiService,
   ) { }
 
-  private getCouponDiscountAmount(coupon: Coupon, productPrice: number) {
-    const couponValue = Number(coupon.value) || 0;
-    const maxDiscountAmount = Number(coupon.maxDiscountAmount) || 0;
-
-    if (coupon.type === CouponType.FIXED) {
-      return Math.min(couponValue, productPrice);
-    }
-
-    if (coupon.type === CouponType.PERCENT) {
-      const rawDiscount = (productPrice * couponValue) / 100;
-      const cappedDiscount =
-        maxDiscountAmount > 0 ? Math.min(rawDiscount, maxDiscountAmount) : rawDiscount;
-      return Math.min(cappedDiscount, productPrice);
-    }
-
-    return 0;
-  }
-
-  private getBestCouponForProduct(product: Product, coupons: Coupon[]) {
-    const now = new Date();
-    const productPrice = Number(product.price) || 0;
-
-    let bestCoupon: Coupon | null = null;
-    let maxDiscount = 0;
-
-    for (const coupon of coupons) {
-      if (!coupon.isPublic || !coupon.isActive || coupon.status !== CouponStatus.ACTIVE) {
-        continue;
-      }
-
-      if (coupon.startDate > now || coupon.endDate < now) {
-        continue;
-      }
-
-      if (coupon.applicableProduct && coupon.applicableProduct !== product.id) {
-        continue;
-      }
-
-      if ((Number(coupon.minOrderAmount) || 0) > productPrice) {
-        continue;
-      }
-
-      if ((coupon.maxUses || 0) > 0 && (coupon.usedCount || 0) >= (coupon.maxUses || 0)) {
-        continue;
-      }
-
-      const discount = this.getCouponDiscountAmount(coupon, productPrice);
-
-      if (discount > maxDiscount) {
-        maxDiscount = discount;
-        bestCoupon = coupon;
-      }
-    }
-
-    return {
-      maxCouponDiscount: Number(maxDiscount.toFixed(2)),
-      bestCouponCode: bestCoupon?.code ?? null,
-    };
-  }
 
   async create(
     createProductDto: CreateProductDto,
@@ -251,7 +194,7 @@ export class ProductsService {
 
     // Filter images and variants by isActive and add stats
     const processedData = data.map((product) => ({
-      ...this.getBestCouponForProduct(product, publicCoupons),
+      ...getBestCouponForProduct(product, publicCoupons),
       ...product,
       images: product.images?.filter((img) => img.isActive) ?? [],
       variants: product.variants?.filter((v) => v.isActive) ?? [],
