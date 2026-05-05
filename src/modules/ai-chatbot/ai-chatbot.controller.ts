@@ -1,14 +1,19 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
   Patch,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
@@ -65,5 +70,38 @@ export class AiChatbotController {
   closeSession(@Req() req: AuthenticatedRequest, @Param('sessionId', ParseIntPipe) sessionId: number) {
     const userId = req.user.sub;
     return this.aiChatbotService.closeSession(userId, sessionId);
+  }
+
+  @Delete('sessions/:sessionId')
+  @ApiOperation({ summary: 'Hard-delete an AI chatbot session and all its messages' })
+  deleteSession(@Req() req: AuthenticatedRequest, @Param('sessionId', ParseIntPipe) sessionId: number) {
+    const userId = req.user.sub;
+    return this.aiChatbotService.deleteSession(userId, sessionId);
+  }
+
+  @Post('sessions/:sessionId/image-search')
+  @ApiOperation({ summary: 'Search products by image within a chatbot session' })
+  @UseInterceptors(FileInterceptor('file'))
+  imageSearch(
+    @Req() req: AuthenticatedRequest,
+    @Param('sessionId', ParseIntPipe) sessionId: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('Image file is required');
+    const userId = req.user.sub;
+    return this.aiChatbotService.imageSearch(userId, sessionId, file.buffer, file.originalname);
+  }
+
+  @Post('sessions/:sessionId/voice-search')
+  @ApiOperation({ summary: 'Search products by voice within a chatbot session' })
+  @UseInterceptors(FileInterceptor('file'))
+  voiceSearch(
+    @Req() req: AuthenticatedRequest,
+    @Param('sessionId', ParseIntPipe) sessionId: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('Audio file is required');
+    const userId = req.user.sub;
+    return this.aiChatbotService.voiceSearch(userId, sessionId, file.buffer, file.originalname);
   }
 }

@@ -1,7 +1,10 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import type { AiChatProductItem } from '../ai/ai.service';
 import { AiService } from '../ai/ai.service';
+import type { ImageSearchResultDto } from '../products/dtos';
+import { Product } from '../products/entities/product.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateAiChatSessionDto, SendAiChatMessageDto } from './dtos';
 import { AiChatMessage, AiChatSession } from './entities';
@@ -15,6 +18,8 @@ export class AiChatbotService {
     private readonly messageRepo: Repository<AiChatMessage>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
     private readonly aiService: AiService,
   ) {}
 
@@ -63,6 +68,19 @@ export class AiChatbotService {
     const session = await this.getOwnedSession(userId, sessionId);
     session.isActive = false;
     return this.sessionRepo.save(session);
+  }
+
+  async deleteSession(userId: number, sessionId: number) {
+    const result = await this.sessionRepo.delete({
+      id: sessionId,
+      user: { id: userId },
+    });
+
+    if (result.affected === 0) {
+      throw new HttpException('Chat session not found', HttpStatus.NOT_FOUND);
+    }
+
+    return { deleted: true };
   }
 
   async sendMessage(userId: number, sessionId: number, dto: SendAiChatMessageDto) {
@@ -125,6 +143,86 @@ export class AiChatbotService {
       assistantMessage: savedAssistantMessage,
       products: aiResult.products,
     };
+  }
+
+  async imageSearch(userId: number, sessionId: number, fileBuffer: Buffer, fileName: string) {
+    const session = await this.getOwnedSession(userId, sessionId);
+
+    const rawResults = await this.aiService.searchByImage(fileBuffer, fileName, 8);
+    const products = await this.enrichProducts(rawResults);
+
+    const userMessage = await this.messageRepo.save(
+      this.messageRepo.create({ session, role: 'user', content: '[Tìm kiếm sản phẩm bằng hình ảnh]', products: null, latencyMs: null }),
+    );
+
+    const assistantContent = products.length > 0
+      ? 'Dưới đây là các sản phẩm tương tự với hình ảnh bạn tìm kiếm:'
+      : 'Tôi không tìm thấy sản phẩm nào tương tự. Bạn thử mô tả sản phẩm bằng văn bản nhé!';
+
+    const assistantMessage = await this.messageRepo.save(
+      this.messageRepo.create({ session, role: 'assistant', content: assistantContent, products, latencyMs: null }),
+    );
+
+    if (!session.title) session.title = 'Tìm kiếm bằng hình ảnh';
+    session.lastMessageAt = new Date();
+    await this.sessionRepo.save(session);
+
+    return { sessionId: session.id, userMessage, assistantMessage, products };
+  }
+
+  async voiceSearch(userId: number, sessionId: number, fileBuffer: Buffer, fileName: string) {
+    const session = await this.getOwnedSession(userId, sessionId);
+
+    const result = await this.aiService.searchByVoice(fileBuffer, fileName);
+    const products = await this.enrichProducts(result.products ?? []);
+
+    const transcribedText = result.transcribed_text?.trim() || '[Giọng nói không rõ]';
+
+    const userMessage = await this.messageRepo.save(
+      this.messageRepo.create({ session, role: 'user', content: transcribedText, products: null, latencyMs: null }),
+    );
+
+    const assistantContent = products.length > 0
+      ? `Tôi đã nghe: "${transcribedText}". Dưới đây là các sản phẩm phù hợp:`
+      : `Tôi đã nghe: "${transcribedText}", nhưng không tìm thấy sản phẩm phù hợp. Bạn thử mô tả chi tiết hơn nhé!`;
+
+    const assistantMessage = await this.messageRepo.save(
+      this.messageRepo.create({ session, role: 'assistant', content: assistantContent, products, latencyMs: null }),
+    );
+
+    if (!session.title) session.title = transcribedText.slice(0, 80);
+    session.lastMessageAt = new Date();
+    await this.sessionRepo.save(session);
+
+    return { sessionId: session.id, userMessage, assistantMessage, products };
+  }
+
+  private async enrichProducts(rawResults: ImageSearchResultDto[]): Promise<AiChatProductItem[]> {
+    if (rawResults.length === 0) return [];
+
+    const ids = rawResults.map((r) => r.product_id);
+    const dbProducts = await this.productRepo.find({
+      where: { id: In(ids), isActive: true },
+      relations: ['brand', 'category', 'images'],
+    });
+
+    const productMap = new Map(dbProducts.map((p) => [p.id, p]));
+
+    return rawResults
+      .flatMap((r) => {
+        const p = productMap.get(r.product_id);
+        if (!p) return [];
+        const item: AiChatProductItem = {
+          id: p.id,
+          name: p.name,
+          price: Number(p.price),
+          image_url: p.images?.find((img) => img.isActive)?.imageUrl ?? r.image_url,
+          category: p.category?.name,
+          brand: p.brand?.name,
+          category_department: p.category?.department,
+        };
+        return [item];
+      });
   }
 
   private async requireUser(userId: number): Promise<User> {
