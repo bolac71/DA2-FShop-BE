@@ -19,6 +19,7 @@ import { CouponStatus, CouponType } from 'src/constants';
 import { Coupon } from '../coupons/entities';
 import { CouponsService } from '../coupons/coupons.service';
 import { AiService } from '../ai/ai.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 import { getBestCouponForProduct } from 'src/utils/product.util';
 
@@ -44,6 +45,7 @@ export class ProductsService {
     private sizesService: SizesService,
     private couponsService: CouponsService,
     private aiService: AiService,
+    private cloudinaryService: CloudinaryService,
   ) { }
 
 
@@ -488,5 +490,46 @@ export class ProductsService {
     }
 
     return await this.aiService.transcribeVoice(fileBuffer, fileName);
+  }
+
+  async virtualTryon2D(
+    productId: number,
+    personFile: Express.Multer.File,
+    garmentDesc?: string,
+  ): Promise<{ resultImageUrl: string }> {
+    const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+    if (personFile.size > MAX_IMAGE_SIZE) {
+      throw new HttpException('Person image exceeds 10MB limit', HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+
+    const product = await this.productsRepository.findOne({
+      where: { id: productId, isActive: true },
+      relations: ['images', 'variants'],
+    });
+    if (!product) {
+      throw new HttpException(`Product with id ${productId} not found`, HttpStatus.NOT_FOUND);
+    }
+
+    const garmentImageUrl =
+      product.images?.[0]?.imageUrl ?? product.variants?.[0]?.imageUrl;
+    if (!garmentImageUrl) {
+      throw new HttpException('Product has no images to use as garment', HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    // Download garment image
+    const garmentResponse = await fetch(garmentImageUrl, { signal: AbortSignal.timeout(15000) });
+    if (!garmentResponse.ok) {
+      throw new HttpException('Failed to fetch garment image', HttpStatus.BAD_GATEWAY);
+    }
+    const garmentBuffer = Buffer.from(await garmentResponse.arrayBuffer());
+
+    const resultBuffer = await this.aiService.virtualTryon(
+      personFile.buffer,
+      garmentBuffer,
+      garmentDesc ?? product.name,
+    );
+
+    const uploaded = await this.cloudinaryService.uploadBufferToFolder(resultBuffer, 'virtual-tryon');
+    return { resultImageUrl: uploaded.secure_url };
   }
 }
