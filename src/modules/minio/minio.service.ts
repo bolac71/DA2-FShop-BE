@@ -10,9 +10,9 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as Minio from 'minio';
 import * as fs from 'fs';
 import { MinioFileDto } from './dtos/minio-file.dto';
+import { S3FileInfo, S3FileStat, SupabaseS3Client } from './supabase-s3.client';
 
 @Injectable()
 export class MinioService implements OnModuleInit {
@@ -21,11 +21,15 @@ export class MinioService implements OnModuleInit {
 
   constructor(
     @Inject('MINIO_CLIENT')
-    private readonly minioClient: Minio.Client,
+    private readonly minioClient: SupabaseS3Client,
     private readonly configService: ConfigService,
   ) {
-    this.bucketName =
-      this.configService.get<string>('MINIO_BUCKET_NAME') || 'fshop-backups';
+    const bucketName = this.configService.get<string>('MINIO_BUCKET_NAME');
+    if (!bucketName) {
+      throw new Error('MINIO_BUCKET_NAME is required');
+    }
+
+    this.bucketName = bucketName;
   }
 
   async onModuleInit() {
@@ -35,14 +39,23 @@ export class MinioService implements OnModuleInit {
   private async ensureBucketExists(): Promise<void> {
     try {
       const exists = await this.minioClient.bucketExists(this.bucketName);
-      if (!exists) {
-        this.logger.log(`Creating MinIO bucket: ${this.bucketName}`);
-        await this.minioClient.makeBucket(this.bucketName, 'us-east-1');
-        this.logger.log(`MinIO bucket created: ${this.bucketName}`);
-      } else {
+
+      if (exists) {
         this.logger.log(`MinIO bucket already exists: ${this.bucketName}`);
+        return;
       }
+
+      this.logger.log(`Creating MinIO bucket: ${this.bucketName}`);
+      await this.minioClient.createBucket(this.bucketName);
+      this.logger.log(`MinIO bucket created: ${this.bucketName}`);
     } catch (error: any) {
+      const errorName = error?.code || error?.name;
+
+      if (errorName === 'BucketAlreadyExists' || errorName === 'BucketAlreadyOwnedByYou') {
+        this.logger.log(`MinIO bucket already exists: ${this.bucketName}`);
+        return;
+      }
+
       this.logger.error(
         `Failed to initialize MinIO bucket: ${error?.message || error}`,
       );
@@ -54,15 +67,7 @@ export class MinioService implements OnModuleInit {
 
   async uploadFile(fileName: string, filePath: string): Promise<void> {
     try {
-      const fileStats = fs.statSync(filePath);
-      const fileStream = fs.createReadStream(filePath);
-
-      await this.minioClient.putObject(
-        this.bucketName,
-        fileName,
-        fileStream,
-        fileStats.size,
-      );
+      await this.minioClient.putObject(this.bucketName, fileName, filePath);
     } catch (error) {
       throw new HttpException(
         'Failed to upload file to MinIO',
@@ -76,11 +81,7 @@ export class MinioService implements OnModuleInit {
     destinationPath: string,
   ): Promise<void> {
     try {
-      await this.minioClient.fGetObject(
-        this.bucketName,
-        fileName,
-        destinationPath,
-      );
+      await this.minioClient.downloadObject(this.bucketName, fileName, destinationPath);
     } catch (error: any) {
       if (error?.code === 'NoSuchKey') {
         throw new NotFoundException(`File ${fileName} not found in MinIO`);
@@ -94,7 +95,7 @@ export class MinioService implements OnModuleInit {
 
   async deleteFile(fileName: string): Promise<void> {
     try {
-      await this.minioClient.removeObject(this.bucketName, fileName);
+      await this.minioClient.deleteObject(this.bucketName, fileName);
     } catch (error: any) {
       if (error?.code === 'NoSuchKey') {
         throw new NotFoundException(`File ${fileName} not found in MinIO`);
@@ -108,39 +109,14 @@ export class MinioService implements OnModuleInit {
 
   async listFiles(): Promise<MinioFileDto[]> {
     try {
-      const objectsStream = this.minioClient.listObjects(
-        this.bucketName,
-        '',
-        true,
-      );
+      const files = await this.minioClient.listObjects(this.bucketName);
 
-      const files: MinioFileDto[] = [];
-
-      return new Promise((resolve, reject) => {
-        objectsStream.on('data', (obj) => {
-          if (obj.name && obj.size && obj.etag && obj.lastModified) {
-            files.push({
-              fileName: obj.name,
-              size: obj.size,
-              etag: obj.etag,
-              lastModified: obj.lastModified,
-            });
-          }
-        });
-
-        objectsStream.on('end', () => {
-          resolve(files);
-        });
-
-        objectsStream.on('error', () => {
-          reject(
-            new HttpException(
-              'Failed to list files from MinIO',
-              HttpStatus.INTERNAL_SERVER_ERROR,
-            ),
-          );
-        });
-      });
+      return files.map((file) => ({
+        fileName: file.fileName,
+        size: file.size,
+        etag: file.etag,
+        lastModified: file.lastModified,
+      }));
     } catch (error) {
       throw new HttpException(
         'Failed to list files from MinIO',
@@ -151,12 +127,7 @@ export class MinioService implements OnModuleInit {
 
   async getFileUrl(fileName: string, expiresIn = 3600) {
     try {
-      const url = await this.minioClient.presignedGetObject(
-        this.bucketName,
-        fileName,
-        expiresIn,
-      );
-      return url;
+      return this.minioClient.getSignedObjectUrl(this.bucketName, fileName, expiresIn);
     } catch (error: any) {
       if (error?.code === 'NoSuchKey') {
         throw new NotFoundException(`File ${fileName} not found in MinIO`);
@@ -168,13 +139,9 @@ export class MinioService implements OnModuleInit {
     }
   }
 
-  async getFileStat(fileName: string): Promise<Minio.BucketItemStat> {
+  async getFileStat(fileName: string): Promise<S3FileStat> {
     try {
-      const stat = await this.minioClient.statObject(
-        this.bucketName,
-        fileName,
-      );
-      return stat;
+      return this.minioClient.headObject(this.bucketName, fileName);
     } catch (error: any) {
       if (error?.code === 'NoSuchKey') {
         throw new NotFoundException(`File ${fileName} not found in MinIO`);

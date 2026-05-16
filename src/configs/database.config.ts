@@ -10,13 +10,16 @@ export const getDatabaseConfig = (
   config: ConfigService,
 ): TypeOrmModuleOptions => ({
   type: 'postgres',
-  host: config.get('DATABASE_HOST') || 'localhost',
-  port: config.get('DATABASE_PORT') || 5432,
-  username: config.get('DATABASE_USER') || 'username',
-  password: config.get('DATABASE_PASSWORD') || '123456',
-  database: config.get('DATABASE_NAME') || 'fshop_db',
+  // Use DB_* environment variables (DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_NAME)
+  host: config.get<string>('DB_HOST') as string,
+  port: config.get('DB_PORT') ? parseInt(config.get<string>('DB_PORT') as string, 10) : undefined,
+  username: config.get<string>('DB_USERNAME') as string,
+  password: config.get<string>('DB_PASSWORD') as string,
+  database: config.get<string>('DB_NAME') as string,
   autoLoadEntities: true, // Entities loaded from modules
   migrations: ['dist/migrations/*.js'],
   synchronize: false,
   logging: config.get('NODE_ENV') === 'development',
+  // Enable ssl when DB_USE_SSL=true (useful for managed DBs like Neon)
+  ssl: config.get<string>('DB_USE_SSL') === 'true' ? { rejectUnauthorized: false } : undefined,
 });

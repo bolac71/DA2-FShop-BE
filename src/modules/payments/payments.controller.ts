@@ -58,14 +58,14 @@ export class PaymentsController {
     type: String,
     required: true,
     description: 'URL to redirect after payment is completed',
-    example: 'http://localhost:5173/payment/return',
+    example: 'https://your-frontend-domain/payment/return',
   })
   @ApiQuery({
     name: 'notifyUrl',
     type: String,
     required: true,
     description: 'URL for payment gateway to send webhook notifications',
-    example: 'http://localhost:4000/api/v1/payments/webhook/momo',
+    example: 'https://your-backend-domain/api/v1/payments/webhook/momo',
   })
   @ApiCreatedResponse({
     description: 'Payment initiated successfully',
@@ -215,14 +215,14 @@ export class PaymentsController {
     type: String,
     required: true,
     description: 'URL to redirect after payment is completed',
-    example: 'http://localhost:5173/payment/return',
+    example: 'https://your-frontend-domain/payment/return',
   })
   @ApiQuery({
     name: 'notifyUrl',
     type: String,
     required: true,
     description: 'URL for payment gateway to send webhook notifications',
-    example: 'http://localhost:4000/api/v1/payments/webhook/momo',
+    example: 'https://your-backend-domain/api/v1/payments/webhook/momo',
   })
   @ApiCreatedResponse({
     description: 'Payment retry initiated successfully',

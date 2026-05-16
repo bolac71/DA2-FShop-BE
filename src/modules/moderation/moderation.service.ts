@@ -21,10 +21,12 @@ export class ModerationService {
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
   ) {
-    this.aiServiceUrl =
-      this.configService.get<string>('AI_SERVICE_URL') ||
-      this.configService.get<string>('AI_SERVER_URL') ||
-      'http://localhost:8001';
+    const aiServerUrl = this.configService.get<string>('AI_SERVER_URL');
+    if (!aiServerUrl) {
+      throw new Error('AI_SERVER_URL is required');
+    }
+
+    this.aiServiceUrl = aiServerUrl;
   }
 
   async moderateContent(

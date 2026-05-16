@@ -40,7 +40,7 @@ export class MoMoGateway {
   private readonly SECRET_KEY: string;
 
   constructor(private configService: ConfigService) {
-    this.MOMO_API_URL = this.configService.get<string>('MOMO_API_URL') || 'https://test-payment.momo.vn/v2/gateway/api/create';
+    this.MOMO_API_URL = this.configService.get<string>('MOMO_API_URL') || '';
     this.PARTNER_CODE = this.configService.get<string>('MOMO_PARTNER_CODE') || '';
     this.ACCESS_KEY = this.configService.get<string>('MOMO_ACCESS_KEY') || '';
     this.SECRET_KEY = this.configService.get<string>('MOMO_SECRET_KEY') || '';

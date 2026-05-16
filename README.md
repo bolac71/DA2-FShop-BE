@@ -253,24 +253,43 @@ NODE_ENV=development
 PORT=4000
 
 # Database (PostgreSQL)
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_USER=username
-DATABASE_PASSWORD=123456
-DATABASE_NAME=fshop_db
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=username
+DB_PASSWORD=123456
+DB_NAME=fshop_db
+DB_CONTAINER_NAME=fshop_postgres
 
 # JWT
 JWT_SECRET=your_jwt_secret_key_here_min_32_chars
-JWT_ACCESS_EXPIRATION=30d
+JWT_ACCESS_EXPIRES_IN=30d
 JWT_REFRESH_SECRET=your_jwt_refresh_secret_key_here
+JWT_REFRESH_EXPIRES_IN=30d
 JWT_REFRESH_EXPIRATION_SECONDS=2592000
 
 # OAuth
 GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_CALLBACK_URL=https://your-backend-domain/api/v1/auth/google/callback
 
 # Redis (Optional)
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# AI
+AI_SERVER_URL=http://localhost:8000
+
+# Storage
+MINIO_ENDPOINT=localhost
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET_NAME=fshop-backups
+
+# Frontend
+FE_URL=http://localhost:3000
 
 # Email/SMS (Future use)
 # SENDGRID_API_KEY=...
@@ -346,26 +365,28 @@ npm run start:dev
 
 | Biến | Kiểu | Mặc Định | Mô Tả |
 |------|------|---------|-------|
-| `DATABASE_HOST` | string | `localhost` | Địa chỉ PostgreSQL server |
-| `DATABASE_PORT` | number | `5432` | Cổng PostgreSQL |
-| `DATABASE_USER` | string | `username` | Tên đăng nhập PostgreSQL |
-| `DATABASE_PASSWORD` | string | `123456` | Mật khẩu PostgreSQL |
-| `DATABASE_NAME` | string | `fshop_db` | Tên database |
+| `DB_HOST` | string | `localhost` | Địa chỉ PostgreSQL server |
+| `DB_PORT` | number | `5432` | Cổng PostgreSQL |
+| `DB_USERNAME` | string | `username` | Tên đăng nhập PostgreSQL |
+| `DB_PASSWORD` | string | `123456` | Mật khẩu PostgreSQL |
+| `DB_NAME` | string | `fshop_db` | Tên database |
+| `DB_CONTAINER_NAME` | string | `fshop_postgres` | Tên container dùng cho backup/restore |
 
 ### SERVER Configuration
 
 | Biến | Kiểu | Mặc Định | Mô Tả |
 |------|------|---------|-------|
 | `NODE_ENV` | string | `development` | Environment: `development`, `production`, `test` |
-| `PORT` | number | `3000` | Cổng server (thường dùng 4000) |
+| `PORT` | number | `4000` | Cổng server |
 
 ### JWT Configuration
 
 | Biến | Kiểu | Mặc Định | Mô Tả |
 |------|------|---------|-------|
 | `JWT_SECRET` | string | Required | Secret key để ký JWT tokens (tối thiểu 32 ký tự) |
-| `JWT_ACCESS_EXPIRATION` | string | `30d` | Thời gian hết hạn access token |
+| `JWT_ACCESS_EXPIRES_IN` | string | `30d` | Thời gian hết hạn access token |
 | `JWT_REFRESH_SECRET` | string | Required | Secret key cho refresh tokens |
+| `JWT_REFRESH_EXPIRES_IN` | string | `30d` | Thời gian hết hạn refresh token |
 | `JWT_REFRESH_EXPIRATION_SECONDS` | number | `2592000` | Thời gian hết hạn refresh token (sec) |
 
 ### OAUTH Configuration
@@ -373,6 +394,8 @@ npm run start:dev
 | Biến | Kiểu | Mặc Định | Mô Tả |
 |------|------|---------|-------|
 | `GOOGLE_CLIENT_ID` | string | Required | Google OAuth 2.0 Client ID |
+| `GOOGLE_CLIENT_SECRET` | string | Required | Google OAuth 2.0 Client Secret |
+| `GOOGLE_CALLBACK_URL` | string | Required | Google OAuth callback URL |
 
 ### REDIS Configuration (Optional)
 
@@ -386,8 +409,7 @@ npm run start:dev
 
 | Biến | Kiểu | Mặc Định | Mô Tả |
 |------|------|---------|-------|
-| `AI_SERVICE_URL` | string | `http://localhost:8000` | URL của AI service dùng cho recommendations và chatbot |
-| `AI_SERVER_URL` | string | `http://localhost:8000` | Alias cũ cho AI service URL |
+| `AI_SERVER_URL` | string | `http://localhost:8000` | URL của AI service dùng cho recommendations và chatbot |
 | `AI_RECOMMENDATION_TIMEOUT_MS` | number | `5000` | Thời gian chờ tối đa khi gọi AI recommendation API |
 
 ### STORAGE Configuration (Optional)
@@ -398,8 +420,11 @@ npm run start:dev
 | `CLOUDINARY_API_KEY` | string | Cloudinary API key |
 | `CLOUDINARY_API_SECRET` | string | Cloudinary API secret |
 | `MINIO_ENDPOINT` | string | MinIO server endpoint (Storage alternative) |
+| `MINIO_PORT` | number | `9000` | MinIO port |
+| `MINIO_USE_SSL` | boolean | `false` | Dùng SSL khi kết nối MinIO |
 | `MINIO_ACCESS_KEY` | string | MinIO access key |
 | `MINIO_SECRET_KEY` | string | MinIO secret key |
+| `MINIO_BUCKET_NAME` | string | `fshop-backups` | Tên bucket MinIO |
 
 ---
 
@@ -725,7 +750,16 @@ cp .env.example .env.production
 nano .env.production
 ```
 
-#### 3. Database Setup
+#### 3. Render Setup
+
+- Chọn `Docker` làm runtime cho Web Service.
+- Build từ [Dockerfile](./Dockerfile) hiện có.
+- Dùng `GET /health` để cấu hình health check.
+- Đặt `NODE_ENV=production` và khai báo đầy đủ env cho DB, Redis, MinIO, JWT, Cloudinary, Google OAuth, SMTP, `FE_URL`, `AI_SERVER_URL`.
+- Nếu bạn chỉ có bộ biến `DB_*`, backend vẫn chấp nhận; nếu dùng bộ `DATABASE_*` thì nên giữ nhất quán cho toàn hệ thống.
+- Backup hiện tại không nên dùng nguyên trạng trên Render vì nó phụ thuộc `docker exec` và tên container cố định.
+
+#### 4. Database Setup
 
 ```bash
 # Connect to PostgreSQL
@@ -738,14 +772,14 @@ CREATE DATABASE fshop_production OWNER fshop_user;
 # Or use db management tool
 ```
 
-#### 4. Run Migrations
+#### 5. Run Migrations
 
 ```bash
 # Set NODE_ENV & run migrations
 NODE_ENV=production npm run migration:run
 ```
 
-#### 5. Process Manager (PM2)
+#### 6. Process Manager (PM2)
 
 ```bash
 # Install PM2 globally
