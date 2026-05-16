@@ -18,6 +18,7 @@ import {
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { UseGuards } from '@nestjs/common';
 import { OptionalJwtAuthGuard } from 'src/guards/optional-jwt-auth.guard';
+import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { ApiOperation, ApiTags, ApiConsumes, ApiNotFoundResponse } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import {
@@ -188,5 +189,21 @@ export class ProductsController {
   @ApiNotFoundResponse({ description: 'Product not found' })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.productsService.remove(id);
+  }
+
+  @Post(':id/virtual-tryon')
+  @ApiConsumes('multipart/form-data')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('personImage'))
+  @ApiOperation({ summary: 'Virtual try-on 2D: upload person photo and get dressed result image' })
+  async virtualTryon2D(
+    @Param('id', ParseIntPipe) productId: number,
+    @UploadedFile() personImage: Express.Multer.File,
+    @Body('garmentDesc') garmentDesc?: string,
+  ) {
+    if (!personImage) {
+      throw new BadRequestException('personImage file is required');
+    }
+    return this.productsService.virtualTryon2D(productId, personImage, garmentDesc);
   }
 }
