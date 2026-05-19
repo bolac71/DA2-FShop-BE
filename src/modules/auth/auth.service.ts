@@ -27,21 +27,28 @@ export class AuthService {
   }
 
   private generateRefreshToken(userId: number, email: string, role: Role, cartId?: number): string {
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+    if (!refreshSecret) {
+      throw new Error('JWT_REFRESH_SECRET is required');
+    }
+
     return this.jwtService.sign(
       { sub: userId, email, role, ...(cartId && { cartId }) },
       {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'default_refresh_secret'),
-        expiresIn: this.configService.get('JWT_REFRESH_EXPIRATION', '7d') as any,
+        secret: refreshSecret,
+        expiresIn: this.configService.get('JWT_REFRESH_EXPIRES_IN') as any,
       },
     );
   }
 
   private getRefreshCookieOptions() {
+    const refreshExpirySeconds = Number(this.configService.get<string>('JWT_REFRESH_EXPIRATION_SECONDS'));
+
     return {
       httpOnly: true,
       secure: this.configService.get<string>('NODE_ENV') === 'production',
       sameSite: 'strict' as const,
-      maxAge: this.configService.get<number>('JWT_REFRESH_EXPIRATION_SECONDS', 604800) * 1000,
+      maxAge: (Number.isFinite(refreshExpirySeconds) ? refreshExpirySeconds : 0) * 1000,
     };
   }
 
@@ -63,7 +70,10 @@ export class AuthService {
     const accessToken = this.generateAccessToken(user.id, user.email, user.role, cartId);
     const refreshToken = this.generateRefreshToken(user.id, user.email, user.role, cartId);
 
-    const refreshExpirySeconds = this.configService.get<number>('JWT_REFRESH_EXPIRATION_SECONDS', 604800);
+    const refreshExpirySeconds = Number(this.configService.get<string>('JWT_REFRESH_EXPIRATION_SECONDS'));
+    if (!Number.isFinite(refreshExpirySeconds) || refreshExpirySeconds <= 0) {
+      throw new Error('JWT_REFRESH_EXPIRATION_SECONDS is required');
+    }
     await this.redis.set(`refresh_token:${user.id}`, refreshToken, 'EX', refreshExpirySeconds);
 
     const { password: _password, publicId: _publicId, ...userInfo } = user;
@@ -114,7 +124,10 @@ export class AuthService {
     const accessToken = this.generateAccessToken(user.id, user.email, user.role, cartId);
     const refreshToken = this.generateRefreshToken(user.id, user.email, user.role, cartId);
 
-    const refreshExpirySeconds = this.configService.get<number>('JWT_REFRESH_EXPIRATION_SECONDS', 604800);
+    const refreshExpirySeconds = Number(this.configService.get<string>('JWT_REFRESH_EXPIRATION_SECONDS'));
+    if (!Number.isFinite(refreshExpirySeconds) || refreshExpirySeconds <= 0) {
+      throw new Error('JWT_REFRESH_EXPIRATION_SECONDS is required');
+    }
     await this.redis.set(`refresh_token:${user.id}`, refreshToken, 'EX', refreshExpirySeconds);
 
     const { password: _password, publicId: _publicId, ...userInfo } = user;
@@ -123,9 +136,14 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     try {
+      const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+      if (!refreshSecret) {
+        throw new Error('JWT_REFRESH_SECRET is required');
+      }
+
       const payload = this.jwtService.verify<{ sub: number; email: string; role: Role; cartId?: number }>(
         refreshToken,
-        { secret: this.configService.get<string>('JWT_REFRESH_SECRET', 'default_refresh_secret') },
+        { secret: refreshSecret },
       );
 
       const stored = await this.redis.get(`refresh_token:${payload.sub}`);
@@ -141,7 +159,10 @@ export class AuthService {
       const newAccessToken = this.generateAccessToken(user.id, user.email, user.role, payload.cartId);
       const newRefreshToken = this.generateRefreshToken(user.id, user.email, user.role, payload.cartId);
 
-      const refreshExpirySeconds = this.configService.get<number>('JWT_REFRESH_EXPIRATION_SECONDS', 604800);
+      const refreshExpirySeconds = Number(this.configService.get<string>('JWT_REFRESH_EXPIRATION_SECONDS'));
+      if (!Number.isFinite(refreshExpirySeconds) || refreshExpirySeconds <= 0) {
+        throw new Error('JWT_REFRESH_EXPIRATION_SECONDS is required');
+      }
       await this.redis.set(`refresh_token:${user.id}`, newRefreshToken, 'EX', refreshExpirySeconds);
 
       return { accessToken: newAccessToken, refreshToken: newRefreshToken };
@@ -153,7 +174,11 @@ export class AuthService {
   async logout(userId: number): Promise<void> {
     // Store logout timestamp to invalidate all tokens issued before this time
     const logoutAtSeconds = Math.floor(Date.now() / 1000);
-    await this.redis.set(`logout_at:${userId}`, logoutAtSeconds.toString(), 'EX', 604800); // TTL 7 days
+    const refreshExpirySeconds = Number(this.configService.get<string>('JWT_REFRESH_EXPIRATION_SECONDS'));
+    if (!Number.isFinite(refreshExpirySeconds) || refreshExpirySeconds <= 0) {
+      throw new Error('JWT_REFRESH_EXPIRATION_SECONDS is required');
+    }
+    await this.redis.set(`logout_at:${userId}`, logoutAtSeconds.toString(), 'EX', refreshExpirySeconds);
     // Also clear refresh token
     await this.redis.del(`refresh_token:${userId}`);
   }

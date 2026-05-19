@@ -59,7 +59,8 @@ export const AppDataSource = new DataSource({
   username: process.env.DATABASE_USER || 'username',
   password: process.env.DATABASE_PASSWORD || '123456',
   database: process.env.DATABASE_NAME || 'fshop_db',
-  ssl: process.env.DB_USE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  ssl:
+    process.env.DB_USE_SSL === 'true' ? { rejectUnauthorized: false } : false,
   entities: [
     User,
     Address,
@@ -106,4 +107,5 @@ export const AppDataSource = new DataSource({
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
+  // Enable ssl when using managed DBs (Neon, etc.)
 });

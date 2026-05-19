@@ -36,7 +36,7 @@ export class PaymentResponseDto {
   @ApiProperty({
     nullable: true,
     description: 'Redirect URL to complete payment (for web checkout)',
-    example: 'https://test-payment.momo.vn/v3/gateway/api/create?...',
+    example: 'https://payment-gateway.example.com/create?...',
   })
   redirectUrl: string;
 

@@ -6,7 +6,7 @@ import { MinioService } from '../minio/minio.service';
 import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { BackupMetadata } from './interfaces/backup-metadata.interface';
 import { Cron } from '@nestjs/schedule';
 
@@ -42,8 +42,37 @@ export class BackupService {
     return `backup_${year}-${month}-${day}_${hours}${minutes}${seconds}.dump`;
   }
 
-  private runCommand(command: string): void {
-    execSync(command, { stdio: 'pipe' });
+  private runCommand(command: string, args: string[], env?: NodeJS.ProcessEnv): void {
+    execFileSync(command, args, {
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        ...env,
+      },
+    });
+  }
+
+  private hasDockerContainer(containerName: string): boolean {
+    try {
+      this.runCommand('docker', ['inspect', containerName]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private getDatabaseConfig() {
+    const dbHost = this.configService.get<string>('DB_HOST');
+    const dbPort = this.configService.get<string>('DB_PORT');
+    const dbUsername = this.configService.get<string>('DB_USERNAME');
+    const dbPassword = this.configService.get<string>('DB_PASSWORD');
+    const dbName = this.configService.get<string>('DB_NAME');
+
+    if (!dbHost || !dbPort || !dbUsername || !dbPassword || !dbName) {
+      throw new Error('Database connection variables are required');
+    }
+
+    return { dbHost, dbPort, dbUsername, dbPassword, dbName };
   }
 
   private ensureValidBackupFilename(filename: string): void {
@@ -56,37 +85,51 @@ export class BackupService {
     const filename = this.generateBackupFilename();
     const tempFilePath = path.join(this.tempDir, filename);
 
-    const dbUsername = this.configService.get<string>('DB_USERNAME');
-    const dbPassword = this.configService.get<string>('DB_PASSWORD');
-    const dbName = this.configService.get<string>('DB_NAME');
-
-    const containerName = 'fshop_postgres';
-    const containerBackupPath = `/tmp/${filename}`;
+    const { dbHost, dbPort, dbUsername, dbPassword, dbName } = this.getDatabaseConfig();
+    const containerName = this.configService.get<string>('DB_CONTAINER_NAME');
 
     try {
       this.logger.log(`Starting database backup: ${filename}`);
 
-      // Step 1: Create backup inside container
-      const dumpCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} pg_dump -U ${dbUsername} -d ${dbName} -F c -f ${containerBackupPath}`;
+      if (containerName && this.hasDockerContainer(containerName)) {
+        const containerBackupPath = `/tmp/${filename}`;
 
-      this.runCommand(dumpCommand);
+        this.runCommand('docker', [
+          'exec',
+          '-e',
+          `PGPASSWORD=${dbPassword}`,
+          containerName,
+          'pg_dump',
+          '-U',
+          dbUsername,
+          '-d',
+          dbName,
+          '-F',
+          'c',
+          '-f',
+          containerBackupPath,
+        ]);
 
-      this.logger.log(`Database dumped inside container: ${containerBackupPath}`);
+        this.logger.log(`Database dumped inside container: ${containerBackupPath}`);
 
-      // Step 2: Copy backup file from container to host
-      const copyCommand = `docker cp ${containerName}:${containerBackupPath} "${tempFilePath}"`;
+        this.runCommand('docker', ['cp', `${containerName}:${containerBackupPath}`, tempFilePath]);
+        this.logger.log(`Backup copied to host: ${tempFilePath}`);
 
-      this.runCommand(copyCommand);
+        try {
+          this.runCommand('docker', ['exec', containerName, 'rm', containerBackupPath]);
+        } catch {
+          this.logger.warn('Failed to clean up backup file in container');
+        }
+      } else {
+        this.logger.log('Docker container not found, using direct pg_dump against managed database');
 
-      this.logger.log(`Backup copied to host: ${tempFilePath}`);
+        this.runCommand(
+          'pg_dump',
+          ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-F', 'c', '-f', tempFilePath],
+          { PGPASSWORD: dbPassword },
+        );
 
-      // Step 3: Clean up backup file inside container
-      const cleanupCommand = `docker exec ${containerName} rm ${containerBackupPath}`;
-
-      try {
-        this.runCommand(cleanupCommand);
-      } catch {
-        this.logger.warn('Failed to clean up backup file in container');
+        this.logger.log(`Backup copied to host: ${tempFilePath}`);
       }
 
       // Step 4: Upload to MinIO
@@ -153,12 +196,8 @@ export class BackupService {
 
     const tempFilePath = path.join(this.tempDir, filename);
 
-    const dbUsername = this.configService.get<string>('DB_USERNAME');
-    const dbPassword = this.configService.get<string>('DB_PASSWORD');
-    const dbName = this.configService.get<string>('DB_NAME');
-
-    const containerName = 'fshop_postgres';
-    const containerBackupPath = `/tmp/${filename}`;
+    const { dbHost, dbPort, dbUsername, dbPassword, dbName } = this.getDatabaseConfig();
+    const containerName = this.configService.get<string>('DB_CONTAINER_NAME');
 
     try {
       this.logger.log(`Starting database restore from: ${filename}`);
@@ -168,46 +207,102 @@ export class BackupService {
 
       this.logger.log(`Backup downloaded to ${tempFilePath}`);
 
-      // Step 2: Copy backup file to container
-      const copyToContainerCommand = `docker cp "${tempFilePath}" ${containerName}:${containerBackupPath}`;
+      if (containerName && this.hasDockerContainer(containerName)) {
+        const containerBackupPath = `/tmp/${filename}`;
 
-      this.runCommand(copyToContainerCommand);
+        this.runCommand('docker', ['cp', tempFilePath, `${containerName}:${containerBackupPath}`]);
+        this.logger.log(`Backup copied to container: ${containerBackupPath}`);
 
-      this.logger.log(`Backup copied to container: ${containerBackupPath}`);
+        try {
+          this.runCommand('docker', [
+            'exec',
+            '-e',
+            `PGPASSWORD=${dbPassword}`,
+            containerName,
+            'psql',
+            '-U',
+            dbUsername,
+            '-d',
+            'postgres',
+            '-c',
+            `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${dbName}' AND pid <> pg_backend_pid();`,
+          ]);
+          this.logger.log('Active database connections terminated');
+        } catch (error: any) {
+          this.logger.warn(
+            `Failed to terminate connections (this is OK if no active connections): ${error.message}`,
+          );
+        }
 
-      // Step 3: Terminate active connections
-      const terminateConnectionsCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} psql -U ${dbUsername} -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${dbName}' AND pid <> pg_backend_pid();"`;
+        this.runCommand('docker', [
+          'exec',
+          '-e',
+          `PGPASSWORD=${dbPassword}`,
+          containerName,
+          'psql',
+          '-U',
+          dbUsername,
+          '-d',
+          dbName,
+          '-c',
+          'DROP SCHEMA public CASCADE; CREATE SCHEMA public;',
+        ]);
 
-      try {
-        this.runCommand(terminateConnectionsCommand);
-        this.logger.log('Active database connections terminated');
-      } catch (error: any) {
-        this.logger.warn(
-          `Failed to terminate connections (this is OK if no active connections): ${error.message}`,
+        this.logger.log('Schema dropped and recreated');
+
+        this.runCommand('docker', [
+          'exec',
+          '-e',
+          `PGPASSWORD=${dbPassword}`,
+          containerName,
+          'pg_restore',
+          '-U',
+          dbUsername,
+          '-d',
+          dbName,
+          '-F',
+          'c',
+          containerBackupPath,
+        ]);
+
+        this.logger.log(`Database restored successfully from ${filename}`);
+
+        try {
+          this.runCommand('docker', ['exec', containerName, 'rm', containerBackupPath]);
+        } catch {
+          this.logger.warn('Failed to clean up backup file in container');
+        }
+      } else {
+        this.logger.log('Docker container not found, using direct pg_restore against managed database');
+
+        try {
+          this.runCommand(
+            'psql',
+            ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-c', 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();'],
+            { PGPASSWORD: dbPassword },
+          );
+          this.logger.log('Active database connections terminated');
+        } catch (error: any) {
+          this.logger.warn(
+            `Failed to terminate connections (this is OK if no active connections): ${error.message}`,
+          );
+        }
+
+        this.runCommand(
+          'psql',
+          ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-c', 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'],
+          { PGPASSWORD: dbPassword },
         );
-      }
 
-      // Step 4: Drop and recreate schema
-      const dropSchemaCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} psql -U ${dbUsername} -d ${dbName} -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"`;
+        this.logger.log('Schema dropped and recreated');
 
-      this.runCommand(dropSchemaCommand);
+        this.runCommand(
+          'pg_restore',
+          ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-F', 'c', tempFilePath],
+          { PGPASSWORD: dbPassword },
+        );
 
-      this.logger.log('Schema dropped and recreated');
-
-      // Step 5: Restore from backup
-      const restoreCommand = `docker exec -e PGPASSWORD=${dbPassword} ${containerName} pg_restore -U ${dbUsername} -d ${dbName} -F c ${containerBackupPath}`;
-
-      this.runCommand(restoreCommand);
-
-      this.logger.log(`Database restored successfully from ${filename}`);
-
-      // Step 6: Clean up backup file in container
-      const cleanupCommand = `docker exec ${containerName} rm ${containerBackupPath}`;
-
-      try {
-        this.runCommand(cleanupCommand);
-      } catch {
-        this.logger.warn('Failed to clean up backup file in container');
+        this.logger.log(`Database restored successfully from ${filename}`);
       }
 
       // Clean up temp file on host

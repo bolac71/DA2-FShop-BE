@@ -14,10 +14,24 @@ const extractFirstValue = (items: unknown): string | undefined => {
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor() {
+    const clientID = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const callbackURL = process.env.GOOGLE_CALLBACK_URL;
+
+    if (!clientID) {
+      throw new Error('GOOGLE_CLIENT_ID is required');
+    }
+    if (!clientSecret) {
+      throw new Error('GOOGLE_CLIENT_SECRET is required');
+    }
+    if (!callbackURL) {
+      throw new Error('GOOGLE_CALLBACK_URL is required');
+    }
+
     super({
-      clientID: process.env.GOOGLE_CLIENT_ID ?? '',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
-      callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3000/auth/google/callback',
+      clientID,
+      clientSecret,
+      callbackURL,
       scope: ['profile', 'email'],
     });
   }

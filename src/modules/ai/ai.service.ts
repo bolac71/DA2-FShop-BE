@@ -39,10 +39,12 @@ export class AiService {
   private readonly aiChatTimeoutMs: number;
 
   constructor(private readonly configService: ConfigService) {
-    this.aiServiceUrl =
-      this.configService.get<string>('AI_SERVICE_URL') ||
-      this.configService.get<string>('AI_SERVER_URL') ||
-      'http://localhost:8000';
+    const aiServerUrl = this.configService.get<string>('AI_SERVER_URL');
+    if (!aiServerUrl) {
+      throw new Error('AI_SERVER_URL is required');
+    }
+
+    this.aiServiceUrl = aiServerUrl;
 
     const configuredTimeout = Number(this.configService.get<string>('AI_CHAT_TIMEOUT_MS') || '45000');
     this.aiChatTimeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0

@@ -35,10 +35,12 @@ export class RecommendationsService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.aiServerUrl =
-      this.configService.get<string>('AI_SERVICE_URL') ||
-      this.configService.get<string>('AI_SERVER_URL') ||
-      'http://localhost:8000';
+    const aiServerUrl = this.configService.get<string>('AI_SERVER_URL');
+    if (!aiServerUrl) {
+      throw new Error('AI_SERVER_URL is required');
+    }
+
+    this.aiServerUrl = aiServerUrl;
 
     const configuredTimeout = Number(
       this.configService.get<string>('AI_RECOMMENDATION_TIMEOUT_MS') || '30000',
