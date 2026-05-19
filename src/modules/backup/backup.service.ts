@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-enum-comparison */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { MinioService } from '../minio/minio.service';
@@ -42,7 +41,11 @@ export class BackupService {
     return `backup_${year}-${month}-${day}_${hours}${minutes}${seconds}.dump`;
   }
 
-  private runCommand(command: string, args: string[], env?: NodeJS.ProcessEnv): void {
+  private runCommand(
+    command: string,
+    args: string[],
+    env?: NodeJS.ProcessEnv,
+  ): void {
     execFileSync(command, args, {
       stdio: 'pipe',
       env: {
@@ -62,11 +65,11 @@ export class BackupService {
   }
 
   private getDatabaseConfig() {
-    const dbHost = this.configService.get<string>('DB_HOST');
-    const dbPort = this.configService.get<string>('DB_PORT');
-    const dbUsername = this.configService.get<string>('DB_USERNAME');
-    const dbPassword = this.configService.get<string>('DB_PASSWORD');
-    const dbName = this.configService.get<string>('DB_NAME');
+    const dbHost = this.configService.get<string>('DATABASE_HOST');
+    const dbPort = this.configService.get<string>('DATABASE_PORT');
+    const dbUsername = this.configService.get<string>('DATABASE_USER');
+    const dbPassword = this.configService.get<string>('DATABASE_PASSWORD');
+    const dbName = this.configService.get<string>('DATABASE_NAME');
 
     if (!dbHost || !dbPort || !dbUsername || !dbPassword || !dbName) {
       throw new Error('Database connection variables are required');
@@ -77,7 +80,10 @@ export class BackupService {
 
   private ensureValidBackupFilename(filename: string): void {
     if (!this.backupFileRegex.test(filename)) {
-      throw new HttpException('Invalid backup filename format', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Invalid backup filename format',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
@@ -85,7 +91,8 @@ export class BackupService {
     const filename = this.generateBackupFilename();
     const tempFilePath = path.join(this.tempDir, filename);
 
-    const { dbHost, dbPort, dbUsername, dbPassword, dbName } = this.getDatabaseConfig();
+    const { dbHost, dbPort, dbUsername, dbPassword, dbName } =
+      this.getDatabaseConfig();
     const containerName = this.configService.get<string>('DB_CONTAINER_NAME');
 
     try {
@@ -110,22 +117,48 @@ export class BackupService {
           containerBackupPath,
         ]);
 
-        this.logger.log(`Database dumped inside container: ${containerBackupPath}`);
+        this.logger.log(
+          `Database dumped inside container: ${containerBackupPath}`,
+        );
 
-        this.runCommand('docker', ['cp', `${containerName}:${containerBackupPath}`, tempFilePath]);
+        this.runCommand('docker', [
+          'cp',
+          `${containerName}:${containerBackupPath}`,
+          tempFilePath,
+        ]);
         this.logger.log(`Backup copied to host: ${tempFilePath}`);
 
         try {
-          this.runCommand('docker', ['exec', containerName, 'rm', containerBackupPath]);
+          this.runCommand('docker', [
+            'exec',
+            containerName,
+            'rm',
+            containerBackupPath,
+          ]);
         } catch {
           this.logger.warn('Failed to clean up backup file in container');
         }
       } else {
-        this.logger.log('Docker container not found, using direct pg_dump against managed database');
+        this.logger.log(
+          'Docker container not found, using direct pg_dump against managed database',
+        );
 
         this.runCommand(
           'pg_dump',
-          ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-F', 'c', '-f', tempFilePath],
+          [
+            '-h',
+            dbHost,
+            '-p',
+            dbPort,
+            '-U',
+            dbUsername,
+            '-d',
+            dbName,
+            '-F',
+            'c',
+            '-f',
+            tempFilePath,
+          ],
           { PGPASSWORD: dbPassword },
         );
 
@@ -187,7 +220,10 @@ export class BackupService {
       return backups;
     } catch (error: any) {
       this.logger.error(`Failed to list backups: ${error.message}`);
-      throw new HttpException('Failed to list backups', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Failed to list backups',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -196,7 +232,8 @@ export class BackupService {
 
     const tempFilePath = path.join(this.tempDir, filename);
 
-    const { dbHost, dbPort, dbUsername, dbPassword, dbName } = this.getDatabaseConfig();
+    const { dbHost, dbPort, dbUsername, dbPassword, dbName } =
+      this.getDatabaseConfig();
     const containerName = this.configService.get<string>('DB_CONTAINER_NAME');
 
     try {
@@ -210,7 +247,11 @@ export class BackupService {
       if (containerName && this.hasDockerContainer(containerName)) {
         const containerBackupPath = `/tmp/${filename}`;
 
-        this.runCommand('docker', ['cp', tempFilePath, `${containerName}:${containerBackupPath}`]);
+        this.runCommand('docker', [
+          'cp',
+          tempFilePath,
+          `${containerName}:${containerBackupPath}`,
+        ]);
         this.logger.log(`Backup copied to container: ${containerBackupPath}`);
 
         try {
@@ -268,17 +309,35 @@ export class BackupService {
         this.logger.log(`Database restored successfully from ${filename}`);
 
         try {
-          this.runCommand('docker', ['exec', containerName, 'rm', containerBackupPath]);
+          this.runCommand('docker', [
+            'exec',
+            containerName,
+            'rm',
+            containerBackupPath,
+          ]);
         } catch {
           this.logger.warn('Failed to clean up backup file in container');
         }
       } else {
-        this.logger.log('Docker container not found, using direct pg_restore against managed database');
+        this.logger.log(
+          'Docker container not found, using direct pg_restore against managed database',
+        );
 
         try {
           this.runCommand(
             'psql',
-            ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-c', 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();'],
+            [
+              '-h',
+              dbHost,
+              '-p',
+              dbPort,
+              '-U',
+              dbUsername,
+              '-d',
+              dbName,
+              '-c',
+              'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();',
+            ],
             { PGPASSWORD: dbPassword },
           );
           this.logger.log('Active database connections terminated');
@@ -290,7 +349,18 @@ export class BackupService {
 
         this.runCommand(
           'psql',
-          ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-c', 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'],
+          [
+            '-h',
+            dbHost,
+            '-p',
+            dbPort,
+            '-U',
+            dbUsername,
+            '-d',
+            dbName,
+            '-c',
+            'DROP SCHEMA public CASCADE; CREATE SCHEMA public;',
+          ],
           { PGPASSWORD: dbPassword },
         );
 
@@ -298,7 +368,19 @@ export class BackupService {
 
         this.runCommand(
           'pg_restore',
-          ['-h', dbHost, '-p', dbPort, '-U', dbUsername, '-d', dbName, '-F', 'c', tempFilePath],
+          [
+            '-h',
+            dbHost,
+            '-p',
+            dbPort,
+            '-U',
+            dbUsername,
+            '-d',
+            dbName,
+            '-F',
+            'c',
+            tempFilePath,
+          ],
           { PGPASSWORD: dbPassword },
         );
 
@@ -338,12 +420,18 @@ export class BackupService {
 
       this.logger.log(`Backup deleted successfully: ${filename}`);
     } catch (error: any) {
-      if (error instanceof HttpException && error.getStatus() === HttpStatus.NOT_FOUND) {
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === HttpStatus.NOT_FOUND
+      ) {
         throw error;
       }
 
       this.logger.error(`Failed to delete backup: ${error.message}`);
-      throw new HttpException('Failed to delete backup', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Failed to delete backup',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -362,12 +450,18 @@ export class BackupService {
         downloadUrl,
       };
     } catch (error: any) {
-      if (error instanceof HttpException && error.getStatus() === HttpStatus.NOT_FOUND) {
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === HttpStatus.NOT_FOUND
+      ) {
         throw error;
       }
 
       this.logger.error(`Failed to get backup info: ${error.message}`);
-      throw new HttpException('Failed to get backup info', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Failed to get backup info',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
