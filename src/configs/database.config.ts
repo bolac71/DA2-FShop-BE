@@ -19,4 +19,5 @@ export const getDatabaseConfig = (
   migrations: ['dist/migrations/*.js'],
   synchronize: false,
   logging: config.get('NODE_ENV') === 'development',
+  ssl: config.get('DB_USE_SSL') === 'true' ? { rejectUnauthorized: false } : false,
 });
