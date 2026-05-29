@@ -1,7 +1,26 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { Body, Controller, Get, HttpException, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { OrdersService } from './orders.service';
-import { ApiOperation, ApiNotFoundResponse, ApiBadRequestResponse, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiNotFoundResponse,
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConsumes,
+} from '@nestjs/swagger';
 import { CreateOrderDto } from './dtos/create-order.dto';
 import { OrderQueryDto } from 'src/dtos';
 import { RolesGuard } from 'src/guards/roles.guard';
@@ -13,7 +32,7 @@ import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) { }
+  constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -78,7 +97,10 @@ export class OrdersController {
     @Body() dto: UpdateOrderStatusDto,
   ) {
     if (!req.user || !req.user.role) {
-      throw new HttpException('Unable to extract user role from token', HttpStatus.UNAUTHORIZED);
+      throw new HttpException(
+        'Unable to extract user role from token',
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     const actor = {
@@ -86,7 +108,7 @@ export class OrdersController {
       role: (req.user.role as string).toLowerCase() as ActorRole,
       reason: dto.reason,
     };
-
+    console.log('Actor info:', actor); // Debug log to check extracted actor info
     return this.ordersService.updateStatus(id, dto.status, actor);
   }
 

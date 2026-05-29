@@ -5,20 +5,46 @@ export type ActorRole = 'user' | 'admin';
 
 /* Các trạng thái cuối, không thể chuyển tiếp */
 export const FINAL_STATUSES = new Set<OrderStatus>([
+  OrderStatus.DELIVERED,
   OrderStatus.REFUNDED,
 ]);
 
 /* Quy tắc chuyển trạng thái hợp lệ theo nghiệp vụ. */
 export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.CANCELED],
-  [OrderStatus.CONFIRMED]: [OrderStatus.PROCESSING, OrderStatus.CANCELED],
-  [OrderStatus.PROCESSING]: [OrderStatus.SHIPPED, OrderStatus.CANCELED],
-  [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED],
-  [OrderStatus.DELIVERED]: [OrderStatus.RETURN_REQUESTED],
-  [OrderStatus.RETURN_REQUESTED]: [OrderStatus.RETURNED],
-  [OrderStatus.RETURNED]: [OrderStatus.REFUNDED],
-  [OrderStatus.CANCELED]: [],           
-  [OrderStatus.REFUNDED]: [],           
+  [OrderStatus.CONFIRMED]: [
+    OrderStatus.PROCESSING,
+    OrderStatus.AWAITING_PICKUP,
+    OrderStatus.CANCELED,
+  ],
+  [OrderStatus.PROCESSING]: [
+    OrderStatus.AWAITING_PICKUP,
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.CANCELED,
+  ],
+  [OrderStatus.AWAITING_PICKUP]: [
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.DELIVERY_FAILED,
+    OrderStatus.CANCELED,
+  ],
+  [OrderStatus.IN_TRANSIT]: [
+    OrderStatus.OUT_FOR_DELIVERY,
+    OrderStatus.DELIVERED,
+    OrderStatus.DELIVERY_FAILED,
+    OrderStatus.CANCELED,
+  ],
+  [OrderStatus.OUT_FOR_DELIVERY]: [
+    OrderStatus.DELIVERED,
+    OrderStatus.DELIVERY_FAILED,
+  ],
+  [OrderStatus.DELIVERY_FAILED]: [
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.CANCELED,
+    OrderStatus.REFUNDED,
+  ],
+  [OrderStatus.DELIVERED]: [],
+  [OrderStatus.CANCELED]: [OrderStatus.REFUNDED],
+  [OrderStatus.REFUNDED]: [],
 };
 
 /*
@@ -26,11 +52,11 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   - hủy khi đơn còn sớm
   - yêu cầu đổi/trả sau khi đã nhận hàng
  */
-export const USER_ALLOWED_TARGETS: Partial<Record<OrderStatus, OrderStatus[]>> = {
-  [OrderStatus.PENDING]: [OrderStatus.CANCELED],
-  [OrderStatus.CONFIRMED]: [OrderStatus.CANCELED],
-  [OrderStatus.DELIVERED]: [OrderStatus.RETURN_REQUESTED],
-};
+export const USER_ALLOWED_TARGETS: Partial<Record<OrderStatus, OrderStatus[]>> =
+  {
+    [OrderStatus.PENDING]: [OrderStatus.CANCELED],
+    [OrderStatus.CONFIRMED]: [OrderStatus.CANCELED],
+  };
 
 /* ADMIN được phép toàn bộ theo ALLOWED_TRANSITIONS */
 export const ADMIN_ALLOWED_TARGETS = ALLOWED_TRANSITIONS;
@@ -46,9 +72,9 @@ export function nextStatuses(current: OrderStatus): OrderStatus[] {
 export function ensureTransitionAllowed(
   current: OrderStatus,
   next: OrderStatus,
-  actorRole: ActorRole
+  actorRole: ActorRole,
 ) {
-  if (current === next) return; 
+  if (current === next) return;
 
   // chặn trạng thái cuối
   if (FINAL_STATUSES.has(current)) {

@@ -3,9 +3,18 @@ import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order, OrderItem, Payment } from 'src/entities';
-import { CartItem, Coupon, CouponRedemption, Inventory, InventoryTransaction, ProductVariant, User } from 'src/entities';
+import {
+  CartItem,
+  Coupon,
+  CouponRedemption,
+  Inventory,
+  InventoryTransaction,
+  ProductVariant,
+  User,
+} from 'src/entities';
 import { InventoriesModule } from '../inventories/inventories.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ShipmentsModule } from '../shipments/shipments.module';
 import { Livestream, LivestreamOrder } from '../livestreams/entities';
 
 @Module({
@@ -25,9 +34,10 @@ import { Livestream, LivestreamOrder } from '../livestreams/entities';
       LivestreamOrder,
     ]),
     InventoriesModule,
-    NotificationsModule
+    NotificationsModule,
+    ShipmentsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
 })
-export class OrdersModule { }
+export class OrdersModule {}

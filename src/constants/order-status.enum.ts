@@ -1,12 +1,12 @@
 export enum OrderStatus {
-  PENDING = 'pending',                 // KH vừa đặt
-  CONFIRMED = 'confirmed',             // Kho xác nhận
-  PROCESSING = 'processing',           // Đang chuẩn bị/đóng gói
-  SHIPPED = 'shipped',                 // Đang giao
-  DELIVERED = 'delivered',             // Đã giao thành công
-  CANCELED = 'canceled',               // Đã hủy
-  RETURN_REQUESTED = 'return_requested', // KH yêu cầu đổi/trả
-  RETURNED = 'returned',               // Kho đã nhận hàng trả
-  REFUNDED = 'refunded',               // Đã hoàn tiền
-
+  PENDING = 'pending', // KH vừa đặt
+  CONFIRMED = 'confirmed', // Kho xác nhận
+  PROCESSING = 'processing', // Đang chuẩn bị/đóng gói
+  AWAITING_PICKUP = 'awaiting_pickup', // Chờ hãng qua lấy hàng
+  IN_TRANSIT = 'in_transit', // Đang vận chuyển
+  OUT_FOR_DELIVERY = 'out_for_delivery', // Đang giao trong ngày
+  DELIVERED = 'delivered', // Đã giao thành công
+  DELIVERY_FAILED = 'delivery_failed', // Giao thất bại
+  CANCELED = 'canceled', // Đã hủy
+  REFUNDED = 'refunded', // Đã hoàn tiền
 }
