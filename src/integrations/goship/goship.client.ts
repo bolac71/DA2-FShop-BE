@@ -36,10 +36,12 @@ type GoshipRateOption = {
 };
 
 export type GoshipWebhookPayload = {
-  gcode: string;
+  gcode?: string;
+  shipment_code?: string;
   code?: string;
   order_id?: string;
-  status: string;
+  status?: string | number;
+  shipment_status?: string | number;
   status_text?: string;
   message?: string;
   description?: string;

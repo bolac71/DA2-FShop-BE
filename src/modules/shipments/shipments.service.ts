@@ -141,16 +141,20 @@ export class ShipmentsService {
   }
 
   async handleWebhookUpdate(payload: GoshipWebhookPayload) {
-    const statusCode = Number(payload.status);
-    if (!payload.gcode) {
+    console.log('Received Goship webhook:', payload);
+    const shipmentCode = payload.shipment_code || payload.gcode;
+    const statusValue = payload.shipment_status ?? payload.status;
+    const statusCode = Number(statusValue);
+
+    if (!shipmentCode) {
       throw new HttpException(
-        'Missing gcode in webhook payload',
+        'Missing shipment code in webhook payload',
         HttpStatus.BAD_REQUEST,
       );
     }
 
     const shipment = await this.shipmentRepo.findOne({
-      where: { shipmentId: payload.gcode },
+      where: { shipmentId: shipmentCode },
       relations: ['order', 'order.user'],
     });
 
@@ -160,7 +164,7 @@ export class ShipmentsService {
     }
 
     shipment.shipmentStatus = String(
-      statusCode || payload.status_text || shipment.shipmentStatus || 'unknown',
+      statusValue || payload.status_text || shipment.shipmentStatus || 'unknown',
     );
     shipment.shipmentStatusCode = Number.isFinite(statusCode)
       ? statusCode
