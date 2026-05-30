@@ -107,6 +107,13 @@ export class OrdersController {
       id: req.user.sub,
       role: (req.user.role as string).toLowerCase() as ActorRole,
       reason: dto.reason,
+      trackingCode: dto.trackingCode,
+      carrierName: dto.carrierName,
+      trackingUrl: dto.trackingUrl,
+      receivedBy: dto.receivedBy,
+      currentLocation: dto.currentLocation,
+      shipperName: dto.shipperName,
+      shipperPhone: dto.shipperPhone,
     };
     console.log('Actor info:', actor); // Debug log to check extracted actor info
     return this.ordersService.updateStatus(id, dto.status, actor);

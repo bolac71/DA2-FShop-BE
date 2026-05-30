@@ -6,20 +6,15 @@ export type ActorRole = 'user' | 'admin';
 /* Các trạng thái cuối, không thể chuyển tiếp */
 export const FINAL_STATUSES = new Set<OrderStatus>([
   OrderStatus.DELIVERED,
-  OrderStatus.REFUNDED,
+  OrderStatus.CANCELED,
+  OrderStatus.DELIVERY_FAILED,
 ]);
 
 /* Quy tắc chuyển trạng thái hợp lệ theo nghiệp vụ. */
 export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.CANCELED],
   [OrderStatus.CONFIRMED]: [
-    OrderStatus.PROCESSING,
     OrderStatus.AWAITING_PICKUP,
-    OrderStatus.CANCELED,
-  ],
-  [OrderStatus.PROCESSING]: [
-    OrderStatus.AWAITING_PICKUP,
-    OrderStatus.IN_TRANSIT,
     OrderStatus.CANCELED,
   ],
   [OrderStatus.AWAITING_PICKUP]: [
@@ -37,14 +32,9 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
     OrderStatus.DELIVERED,
     OrderStatus.DELIVERY_FAILED,
   ],
-  [OrderStatus.DELIVERY_FAILED]: [
-    OrderStatus.IN_TRANSIT,
-    OrderStatus.CANCELED,
-    OrderStatus.REFUNDED,
-  ],
+  [OrderStatus.DELIVERY_FAILED]: [],
   [OrderStatus.DELIVERED]: [],
-  [OrderStatus.CANCELED]: [OrderStatus.REFUNDED],
-  [OrderStatus.REFUNDED]: [],
+  [OrderStatus.CANCELED]: [],
 };
 
 /*

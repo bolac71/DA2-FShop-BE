@@ -122,7 +122,7 @@ export class GoshipClient {
         },
       },
     };
-
+    console.log('Creating shipment with body:', body);
     const res = await this.client.post('/shipments', body, {
       headers: input.idempotencyKey
         ? { 'Idempotency-Key': input.idempotencyKey }
@@ -199,6 +199,7 @@ export class GoshipClient {
     payload: unknown,
     receivedSignature: string | undefined,
   ): boolean {
+    console.log('receivedSignature', receivedSignature)
     if (!receivedSignature || !GoshipConfig.webhookSecret) return false;
 
     const body = JSON.stringify(payload);

@@ -14,4 +14,25 @@ export class UpdateOrderStatusDto {
 
   @StringOptional()
   reason?: string
+
+  @StringOptional()
+  trackingCode?: string
+
+  @StringOptional()
+  carrierName?: string
+
+  @StringOptional()
+  trackingUrl?: string
+
+  @StringOptional()
+  receivedBy?: string
+
+  @StringOptional()
+  currentLocation?: string
+
+  @StringOptional()
+  shipperName?: string
+
+  @StringOptional()
+  shipperPhone?: string
 }

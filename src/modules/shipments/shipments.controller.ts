@@ -9,11 +9,17 @@ import {
   HttpStatus,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Roles } from 'src/decorators/roles.decorator';
+import { Role } from 'src/constants';
+import { ApiOperation } from '@nestjs/swagger';
+import { AdminUpdateShipmentStatusDto } from './dtos/admin-update-shipment.dto';
 import { ShipmentsService } from './shipments.service';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import GoshipClient from 'src/integrations/goship/goship.client';
@@ -59,6 +65,17 @@ export class ShipmentsController {
       orderId,
       req['user']?.role === 'admin' ? undefined : userId,
     );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch('order/:orderId/status')
+  @ApiOperation({ summary: 'Admin manually updates shipment status (simulates webhook)' })
+  async adminUpdateShipmentStatus(
+    @Param('orderId', ParseIntPipe) orderId: number,
+    @Body() dto: AdminUpdateShipmentStatusDto,
+  ) {
+    return this.shipmentsService.adminUpdateStatus(orderId, dto);
   }
 
   @UseGuards(JwtAuthGuard)

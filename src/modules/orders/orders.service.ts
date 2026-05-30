@@ -185,14 +185,12 @@ export class OrdersService {
     const map: Record<OrderStatus, string> = {
       [OrderStatus.PENDING]: 'chờ xác nhận',
       [OrderStatus.CONFIRMED]: 'đã xác nhận',
-      [OrderStatus.PROCESSING]: 'đang xử lý',
       [OrderStatus.AWAITING_PICKUP]: 'chờ lấy hàng',
       [OrderStatus.IN_TRANSIT]: 'đang vận chuyển',
       [OrderStatus.OUT_FOR_DELIVERY]: 'đang giao',
       [OrderStatus.DELIVERED]: 'đã giao',
       [OrderStatus.DELIVERY_FAILED]: 'giao thất bại',
       [OrderStatus.CANCELED]: 'đã hủy',
-      [OrderStatus.REFUNDED]: 'đã hoàn tiền',
     };
 
     return map[status] ?? status;
@@ -673,7 +671,18 @@ export class OrdersService {
   async updateStatus(
     orderId: number,
     next: OrderStatus,
-    actor: { id: number; role: ActorRole; reason?: string },
+    actor: {
+      id: number;
+      role: ActorRole;
+      reason?: string;
+      trackingCode?: string;
+      carrierName?: string;
+      trackingUrl?: string;
+      receivedBy?: string;
+      currentLocation?: string;
+      shipperName?: string;
+      shipperPhone?: string;
+    },
   ) {
     console.log(
       `Updating order status: orderId=${orderId}, nextStatus=${next}, actorId=${actor.id}, actorRole=${actor.role}`,
@@ -720,7 +729,7 @@ export class OrdersService {
           }
           // Admin can bypass payment check
         }
-        if (next === OrderStatus.CANCELED || next === OrderStatus.REFUNDED) {
+        if (next === OrderStatus.CANCELED) {
           const inventoryItems: {
             variant: ProductVariant;
             quantity: number;
@@ -793,6 +802,72 @@ export class OrdersService {
     console.log(
       `Update order status committed: order=${result.orderId}, from=${result.from}, to=${result.to}`,
     );
+
+    // Sync to Shipment / GOSHIP if order status transitions manually
+    if (next === OrderStatus.AWAITING_PICKUP) {
+      try {
+        await this.shipmentsService.adminUpdateStatus(orderId, {
+          statusCode: 901,
+          statusText: 'Chờ lấy hàng',
+          trackingCode: actor.trackingCode,
+          carrierName: actor.carrierName,
+          trackingUrl: actor.trackingUrl,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to sync manual AWAITING_PICKUP to GOSHIP shipment: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else if (next === OrderStatus.IN_TRANSIT) {
+      try {
+        await this.shipmentsService.adminUpdateStatus(orderId, {
+          statusCode: 902,
+          statusText: 'Đang vận chuyển',
+          currentLocation: actor.currentLocation,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to sync manual IN_TRANSIT to GOSHIP shipment: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else if (next === OrderStatus.OUT_FOR_DELIVERY) {
+      try {
+        await this.shipmentsService.adminUpdateStatus(orderId, {
+          statusCode: 904,
+          statusText: 'Đang giao hàng',
+          shipperName: actor.shipperName,
+          shipperPhone: actor.shipperPhone,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to sync manual OUT_FOR_DELIVERY to GOSHIP shipment: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else if (next === OrderStatus.DELIVERED) {
+      try {
+        await this.shipmentsService.adminUpdateStatus(orderId, {
+          statusCode: 905,
+          statusText: 'Giao thành công',
+          receivedBy: actor.receivedBy,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to sync manual DELIVERED to GOSHIP shipment: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else if (next === OrderStatus.DELIVERY_FAILED) {
+      try {
+        await this.shipmentsService.adminUpdateStatus(orderId, {
+          statusCode: 906,
+          statusText: 'Giao hàng thất bại',
+          cancelReason: actor.reason,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to sync manual DELIVERY_FAILED to GOSHIP shipment: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else if (next === OrderStatus.CANCELED) {
+      try {
+        await this.shipmentsService.adminUpdateStatus(orderId, {
+          statusCode: 910,
+          statusText: 'Đã hủy đơn',
+          cancelReason: actor.reason,
+        });
+      } catch (error) {
+        this.logger.error(`Failed to sync manual CANCELED to GOSHIP shipment: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
 
     const notificationPayload = this.buildOrderStatusNotification(
       result.orderId,
@@ -932,27 +1007,54 @@ export class OrdersService {
         });
 
         const trackingCode =
+          res?.data?.carrier_code ||
+          res?.data?.tracking_number ||
+          res?.data?.trackingCode ||
+          res?.data?.tracking ||
+          res?.data?.tracking_code ||
+          res?.carrier_code ||
           res?.tracking_number ||
           res?.trackingCode ||
           res?.tracking ||
           res?.tracking_code ||
           null;
 
-        const providerShipmentId = res?.id || res?.shipmentId || null;
+        const providerShipmentId =
+          res?.data?.id ||
+          res?.data?.shipmentId ||
+          res?.id ||
+          res?.shipmentId ||
+          null;
 
         // store shipment record
         await this.shipmentsService.createForOrder(order.id, {
           shipmentProvider: 'GOSHIP',
           shipmentId: providerShipmentId,
           trackingCode,
-          trackingUrl: res?.tracking_url || null,
-          carrierName: res?.carrier || selectedRate.carrier_name || null,
-          shippingService: selectedRate.service || res?.service || null,
+          trackingUrl: res?.data?.tracking_url || res?.tracking_url || null,
+          carrierName:
+            res?.data?.carrier ||
+            res?.carrier ||
+            selectedRate.carrier_name ||
+            null,
+          shippingService:
+            selectedRate.service ||
+            res?.data?.service ||
+            res?.service ||
+            null,
           shippingFee: Number(
-            order.shippingRateFee || selectedRate.total_fee || res?.fee || 0,
+            order.shippingRateFee ||
+              selectedRate.total_fee ||
+              res?.data?.fee ||
+              res?.fee ||
+              0,
           ),
-          shipmentStatus: String(res?.status || 'created'),
-          shipmentStatusCode: Number(res?.shipment_status || 901),
+          shipmentStatus: String(
+            res?.data?.status || res?.status || 'created',
+          ),
+          shipmentStatusCode: Number(
+            res?.data?.shipment_status || res?.shipment_status || 901,
+          ),
           shipmentMeta: {
             rate: selectedRate,
             orderShippingRateId: order.shippingRateId,

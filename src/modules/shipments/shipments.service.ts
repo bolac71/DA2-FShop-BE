@@ -10,6 +10,7 @@ import { OrderStatus } from 'src/constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from 'src/constants/notification-type.enum';
 import GoshipConfig from 'src/configs/goship.config';
+import { AdminUpdateShipmentStatusDto } from './dtos/admin-update-shipment.dto';
 
 @Injectable()
 export class ShipmentsService {
@@ -17,7 +18,7 @@ export class ShipmentsService {
     @InjectRepository(Shipment) private shipmentRepo: Repository<Shipment>,
     @InjectRepository(Order) private orderRepo: Repository<Order>,
     private readonly notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   async createForOrder(
     orderId: number,
@@ -130,13 +131,13 @@ export class ShipmentsService {
   }
 
   private mapGoshipStatusToOrderStatus(statusCode: number): OrderStatus | null {
-    if ([901, 902].includes(statusCode)) return OrderStatus.AWAITING_PICKUP;
-    if ([903, 918, 919].includes(statusCode)) return OrderStatus.IN_TRANSIT;
+    if (statusCode === 901) return OrderStatus.AWAITING_PICKUP;
+    if ([902, 903, 918, 919].includes(statusCode)) return OrderStatus.IN_TRANSIT;
     if (statusCode === 904) return OrderStatus.OUT_FOR_DELIVERY;
-    if ([905, 910, 911, 913].includes(statusCode)) return OrderStatus.DELIVERED;
+    if ([905, 911, 913].includes(statusCode)) return OrderStatus.DELIVERED;
     if ([906, 907, 908, 915, 916, 917, 1000].includes(statusCode))
       return OrderStatus.DELIVERY_FAILED;
-    if (statusCode === 914) return OrderStatus.CANCELED;
+    if ([910, 914].includes(statusCode)) return OrderStatus.CANCELED;
     return null;
   }
 
@@ -152,7 +153,7 @@ export class ShipmentsService {
         HttpStatus.BAD_REQUEST,
       );
     }
-
+    console.log('shipmentCode', shipmentCode)
     const shipment = await this.shipmentRepo.findOne({
       where: { shipmentId: shipmentCode },
       relations: ['order', 'order.user'],
@@ -169,11 +170,35 @@ export class ShipmentsService {
     shipment.shipmentStatusCode = Number.isFinite(statusCode)
       ? statusCode
       : shipment.shipmentStatusCode;
-    shipment.trackingCode = payload.code || shipment.trackingCode;
+    shipment.trackingCode =
+      payload.code ||
+      (payload as any).carrier_code ||
+      (payload as any).tracking_number ||
+      shipment.trackingCode;
     shipment.trackingUrl = payload.tracking_url || shipment.trackingUrl;
+    const localHistory = Array.isArray((shipment.shipmentMeta as any)?.history)
+      ? [...(shipment.shipmentMeta as any).history]
+      : [];
+
+    const historyText = payload.status_text || payload.description || 'Cập nhật';
+    const historyDesc = payload.description || payload.message || 'Trạng thái vận chuyển cập nhật.';
+    const exists = localHistory.some(
+      (h: any) => h.status === statusCode && h.status_text === historyText
+    );
+
+    if (!exists) {
+      localHistory.push({
+        status: statusCode,
+        status_text: historyText,
+        status_desc: historyDesc,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
     shipment.shipmentMeta = {
       ...(shipment.shipmentMeta || {}),
       webhook: payload,
+      history: localHistory,
       trackingUrl: payload.tracking_url,
       statusText: payload.status_text,
       statusMessage: payload.message,
@@ -206,6 +231,78 @@ export class ShipmentsService {
       shipmentId: shipment.id,
       mappedOrderStatus,
     };
+  }
+
+  async adminUpdateStatus(
+    orderId: number,
+    dto: AdminUpdateShipmentStatusDto,
+  ) {
+    const shipment = await this.findLatestByOrder(orderId);
+    if (!shipment) {
+      throw new HttpException(
+        'Shipment not found for order',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const {
+      statusCode,
+      statusText,
+      trackingCode,
+      carrierName,
+      trackingUrl,
+      currentLocation,
+      shipperName,
+      shipperPhone,
+      receivedBy,
+      cancelReason,
+    } = dto;
+
+    // Update base shipment fields if provided (mostly for 901)
+    if (carrierName) shipment.carrierName = carrierName;
+    if (trackingUrl) shipment.trackingUrl = trackingUrl;
+    if (trackingCode) shipment.trackingCode = trackingCode;
+    await this.shipmentRepo.save(shipment);
+
+    let simulatedDescription = 'Cập nhật hành trình từ đối tác vận chuyển GOSHIP';
+    let simulatedMessage = statusText;
+
+    if (statusCode === 901) {
+      simulatedDescription = 'Shipper đang trên đường đến lấy hàng';
+      simulatedMessage = 'Chờ shipper qua lấy hàng';
+    } else if (statusCode === 902) {
+      simulatedDescription = currentLocation
+        ? `Bưu phẩm đang được trung chuyển tại: ${currentLocation}`
+        : 'Bưu phẩm đang trên xe trung chuyển qua các bưu cục bưu điện';
+      simulatedMessage = 'Đang vận chuyển';
+    } else if (statusCode === 904) {
+      const name = shipperName || 'Nguyễn Văn A';
+      const phone = shipperPhone || '0988888888';
+      simulatedDescription = `Shipper ${name} (${phone}) đang đi phát hàng tới bạn`;
+      simulatedMessage = 'Đang phát hàng';
+    } else if (statusCode === 905) {
+      const recipient = receivedBy || shipment.order.recipientName || 'Khách hàng';
+      simulatedDescription = `Đơn hàng đã được giao thành công cho: ${recipient}`;
+      simulatedMessage = 'Hoàn thành ký nhận';
+    } else if (statusCode === 906) {
+      simulatedDescription = `Giao hàng thất bại. Lý do: ${cancelReason || 'Khách không nhận hoặc không liên hệ được'}`;
+      simulatedMessage = 'Giao hàng thất bại';
+    } else if (statusCode === 910) {
+      simulatedDescription = `Hành trình vận chuyển bị huỷ. Lý do: ${cancelReason || 'Không có lý do chi tiết'}`;
+      simulatedMessage = 'Đã hủy vận đơn';
+    }
+
+    const payload: GoshipWebhookPayload = {
+      gcode: shipment.shipmentId,
+      status: statusCode,
+      status_text: statusText,
+      code: trackingCode || shipment.trackingCode || undefined,
+      description: simulatedDescription,
+      message: simulatedMessage,
+      tracking_url: trackingUrl || shipment.trackingUrl || undefined,
+    };
+
+    return this.handleWebhookUpdate(payload);
   }
 
   async getCodReconciliation(params?: {

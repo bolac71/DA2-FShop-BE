@@ -289,14 +289,12 @@ export class DashboardService {
     const labels: Record<string, string> = {
       pending: 'Chờ xác nhận',
       confirmed: 'Đã xác nhận',
-      processing: 'Đang xử lý',
       awaiting_pickup: 'Chờ lấy hàng',
       in_transit: 'Đang vận chuyển',
       out_for_delivery: 'Đang giao',
       delivered: 'Đã giao',
       delivery_failed: 'Giao thất bại',
       canceled: 'Đã hủy',
-      refunded: 'Đã hoàn tiền',
     };
 
     const total = Math.max(orders.length, 1);
