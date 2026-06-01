@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DashboardQueryDto, DashboardTimeRange } from './dtos/dashboard-query.dto';
+import {
+  DashboardQueryDto,
+  DashboardTimeRange,
+} from './dtos/dashboard-query.dto';
 import { Inventory, Order, Product, User } from 'src/entities';
 import { Repository } from 'typeorm';
 
@@ -14,10 +17,13 @@ type DateRange = {
 @Injectable()
 export class DashboardService {
   constructor(
-    @InjectRepository(Order) private readonly orderRepository: Repository<Order>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
     @InjectRepository(User) private readonly userRepository: Repository<User>,
-    @InjectRepository(Inventory) private readonly inventoryRepository: Repository<Inventory>,
-    @InjectRepository(Product) private readonly productRepository: Repository<Product>,
+    @InjectRepository(Inventory)
+    private readonly inventoryRepository: Repository<Inventory>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
   ) {}
 
   async getOverview(query: DashboardQueryDto) {
@@ -26,14 +32,26 @@ export class DashboardService {
 
     const range = this.getDateRange(timeRange);
 
-    const currentOrders = await this.getOrdersByRange(range.currentStart, range.currentEnd);
-    const previousOrders = await this.getOrdersByRange(range.previousStart, range.previousEnd);
+    const currentOrders = await this.getOrdersByRange(
+      range.currentStart,
+      range.currentEnd,
+    );
+    const previousOrders = await this.getOrdersByRange(
+      range.previousStart,
+      range.previousEnd,
+    );
 
     const currentRevenue = this.sumRevenue(currentOrders);
     const previousRevenue = this.sumRevenue(previousOrders);
 
-    const currentUsers = await this.countUsersByRange(range.currentStart, range.currentEnd);
-    const previousUsers = await this.countUsersByRange(range.previousStart, range.previousEnd);
+    const currentUsers = await this.countUsersByRange(
+      range.currentStart,
+      range.currentEnd,
+    );
+    const previousUsers = await this.countUsersByRange(
+      range.previousStart,
+      range.previousEnd,
+    );
 
     const lowStockCount = await this.inventoryRepository
       .createQueryBuilder('inventory')
@@ -42,7 +60,10 @@ export class DashboardService {
 
     const lowStockItems = await this.inventoryRepository
       .createQueryBuilder('inventory')
-      .select(['inventory.variantId AS "variantId"', 'inventory.quantity AS quantity'])
+      .select([
+        'inventory.variantId AS "variantId"',
+        'inventory.quantity AS quantity',
+      ])
       .where('inventory.quantity <= :threshold', { threshold })
       .orderBy('inventory.quantity', 'ASC')
       .limit(3)
@@ -53,12 +74,19 @@ export class DashboardService {
     const categoryShare = await this.getCategoryShare();
 
     const recentOrders = [...currentOrders]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
       .slice(0, 4);
 
     const recentUsers = await this.userRepository
       .createQueryBuilder('user')
-      .select(['user.id AS id', 'user.email AS email', 'user.createdAt AS "createdAt"'])
+      .select([
+        'user.id AS id',
+        'user.email AS email',
+        'user.createdAt AS "createdAt"',
+      ])
       .where('user.isActive = :isActive', { isActive: true })
       .orderBy('user.createdAt', 'DESC')
       .limit(2)
@@ -95,12 +123,18 @@ export class DashboardService {
         revenue: {
           value: currentRevenue,
           previousValue: previousRevenue,
-          changePercent: this.calcPercentChange(currentRevenue, previousRevenue),
+          changePercent: this.calcPercentChange(
+            currentRevenue,
+            previousRevenue,
+          ),
         },
         orders: {
           value: currentOrders.length,
           previousValue: previousOrders.length,
-          changePercent: this.calcPercentChange(currentOrders.length, previousOrders.length),
+          changePercent: this.calcPercentChange(
+            currentOrders.length,
+            previousOrders.length,
+          ),
         },
         newUsers: {
           value: currentUsers,
@@ -147,12 +181,20 @@ export class DashboardService {
     return this.orderRepository
       .createQueryBuilder('order')
       .where('order.createdAt BETWEEN :start AND :end', { start, end })
-      .select(['order.id', 'order.totalAmount', 'order.status', 'order.createdAt'])
+      .select([
+        'order.id',
+        'order.totalAmount',
+        'order.status',
+        'order.createdAt',
+      ])
       .getMany();
   }
 
   private sumRevenue(orders: Array<Pick<Order, 'totalAmount'>>) {
-    return orders.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0);
+    return orders.reduce(
+      (sum, order) => sum + Number(order.totalAmount || 0),
+      0,
+    );
   }
 
   private async countUsersByRange(start: Date, end: Date) {
@@ -180,7 +222,9 @@ export class DashboardService {
         };
       });
 
-      const indexByKey = new Map(buckets.map((bucket, index) => [bucket.key, index]));
+      const indexByKey = new Map(
+        buckets.map((bucket, index) => [bucket.key, index]),
+      );
       orders.forEach((order) => {
         const key = new Date(order.createdAt).toISOString().slice(0, 10);
         const index = indexByKey.get(key);
@@ -207,7 +251,9 @@ export class DashboardService {
 
       orders.forEach((order) => {
         const createdAt = new Date(order.createdAt);
-        const diffDays = Math.floor((createdAt.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        const diffDays = Math.floor(
+          (createdAt.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+        );
         if (diffDays < 0) return;
         const index = Math.min(3, Math.floor(diffDays / 7));
         buckets[index].revenue += Number(order.totalAmount || 0);
@@ -226,7 +272,8 @@ export class DashboardService {
     orders.forEach((order) => {
       const createdAt = new Date(order.createdAt);
       const monthDiff =
-        now.getMonth() - createdAt.getMonth() +
+        now.getMonth() -
+        createdAt.getMonth() +
         (now.getFullYear() - createdAt.getFullYear()) * 12;
 
       if (monthDiff >= 0 && monthDiff <= 2) {
@@ -242,13 +289,12 @@ export class DashboardService {
     const labels: Record<string, string> = {
       pending: 'Chờ xác nhận',
       confirmed: 'Đã xác nhận',
-      processing: 'Đang xử lý',
-      shipped: 'Đang giao',
+      awaiting_pickup: 'Chờ lấy hàng',
+      in_transit: 'Đang vận chuyển',
+      out_for_delivery: 'Đang giao',
       delivered: 'Đã giao',
+      delivery_failed: 'Giao thất bại',
       canceled: 'Đã hủy',
-      return_requested: 'Yêu cầu trả hàng',
-      returned: 'Đã trả',
-      refunded: 'Đã hoàn tiền',
     };
 
     const total = Math.max(orders.length, 1);
@@ -273,7 +319,10 @@ export class DashboardService {
       .leftJoin('product.category', 'category')
       .select('COALESCE(category.name, :fallback)', 'label')
       .addSelect('COUNT(product.id)', 'count')
-      .where('product.isActive = :isActive', { isActive: true, fallback: 'Khác' })
+      .where('product.isActive = :isActive', {
+        isActive: true,
+        fallback: 'Khác',
+      })
       .groupBy('category.name')
       .orderBy('COUNT(product.id)', 'DESC')
       .limit(6)

@@ -1,11 +1,20 @@
-import { Exclude } from "class-transformer";
-import { OrderStatus } from "src/constants/order-status.enum";
-import { ShippingMethod } from "src/constants/shipping-method.enum";
-import { PaymentMethod } from "src/constants/payment-method.enum";
-import { User } from "src/entities";
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
-import { OrderItem } from ".";
-import { Review } from "src/modules/reviews/entities/review.entity";
+import { Exclude } from 'class-transformer';
+import { OrderStatus } from 'src/constants/order-status.enum';
+import { ShippingMethod } from 'src/constants/shipping-method.enum';
+import { PaymentMethod } from 'src/constants/payment-method.enum';
+import { User } from 'src/entities';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { OrderItem } from '.';
+import { Review } from 'src/modules/reviews/entities/review.entity';
 
 @Entity('orders')
 export class Order {
@@ -14,6 +23,9 @@ export class Order {
 
   @Column({ nullable: true, name: 'recipient_name' })
   recipientName: string;
+
+  @Column({ nullable: true, name: 'recipient_phone' })
+  recipientPhone: string;
 
   @Column({ nullable: true, name: 'detail_address' })
   detailAddress: string;
@@ -30,7 +42,13 @@ export class Order {
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, name: 'total_amount', default: 0 })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    name: 'total_amount',
+    default: 0,
+  })
   totalAmount: number;
 
   @Column({ type: 'text', nullable: true, name: 'note' })
@@ -44,8 +62,38 @@ export class Order {
   })
   shippingMethod: ShippingMethod;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, name: 'shipping_fee' })
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    name: 'shipping_fee',
+  })
   shippingFee: number;
+
+  @Column({ name: 'shipping_rate_id', type: 'varchar', nullable: true })
+  shippingRateId: string;
+
+  @Column({ name: 'shipping_carrier_name', type: 'varchar', nullable: true })
+  shippingCarrierName: string;
+
+  @Column({ name: 'shipping_service_name', type: 'varchar', nullable: true })
+  shippingServiceName: string;
+
+  @Column({ name: 'shipping_expected', type: 'varchar', nullable: true })
+  shippingExpected: string;
+
+  @Column({
+    name: 'shipping_rate_fee',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  shippingRateFee: number;
+
+  @Column({ name: 'shipping_tracking_url', type: 'varchar', nullable: true })
+  shippingTrackingUrl: string;
 
   @Column({
     type: 'enum',

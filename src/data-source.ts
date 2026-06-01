@@ -44,6 +44,7 @@ import {
   LivestreamOrder,
   Payment,
   PaymentRetry,
+  Shipment,
 } from './entities';
 
 /**
@@ -104,6 +105,7 @@ export const AppDataSource = new DataSource({
     LivestreamOrder,
     Payment,
     PaymentRetry,
+    Shipment,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

@@ -1,4 +1,9 @@
-import { MigrationInterface, QueryRunner, Table, TableForeignKey } from 'typeorm';
+import {
+  MigrationInterface,
+  QueryRunner,
+  Table,
+  TableForeignKey,
+} from 'typeorm';
 
 export class CreateOrdersTable1741046400016 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -8,11 +13,12 @@ export class CreateOrdersTable1741046400016 implements MigrationInterface {
         'pending',
         'confirmed',
         'processing',
-        'shipped',
+        'awaiting_pickup',
+        'in_transit',
+        'out_for_delivery',
         'delivered',
+        'delivery_failed',
         'canceled',
-        'return_requested',
-        'returned',
         'refunded'
       )
     `);
@@ -44,6 +50,11 @@ export class CreateOrdersTable1741046400016 implements MigrationInterface {
             name: 'recipient_name',
             type: 'varchar',
             isNullable: false,
+          },
+          {
+            name: 'recipient_phone',
+            type: 'varchar',
+            isNullable: true,
           },
           {
             name: 'detail_address',
@@ -126,9 +137,15 @@ export class CreateOrdersTable1741046400016 implements MigrationInterface {
     );
 
     // Create indexes
-    await queryRunner.query(`CREATE INDEX IDX_orders_user_id ON orders (user_id)`);
-    await queryRunner.query(`CREATE INDEX IDX_orders_status ON orders (status)`);
-    await queryRunner.query(`CREATE INDEX IDX_orders_created_at ON orders (created_at)`);
+    await queryRunner.query(
+      `CREATE INDEX IDX_orders_user_id ON orders (user_id)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IDX_orders_status ON orders (status)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IDX_orders_created_at ON orders (created_at)`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

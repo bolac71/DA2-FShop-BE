@@ -17,11 +17,21 @@ export { Product } from '../modules/products/entities/product.entity';
 export { ProductImage } from '../modules/products/entities/product-image.entity';
 export { ProductVariant } from '../modules/products/entities/product-variant.entity';
 export { ProductTryonAsset } from '../modules/products/entities/product-tryon-asset.entity';
-export { Inventory, InventoryTransaction } from '../modules/inventories/entities';
+export {
+  Inventory,
+  InventoryTransaction,
+} from '../modules/inventories/entities';
 export { Order, OrderItem } from '../modules/orders/entities';
 export { Coupon, CouponRedemption } from '../modules/coupons/entities';
 export { Review, ReviewImage, ReviewVote } from '../modules/reviews/entities';
-export { Post, PostComment, PostImage, PostLike, Hashtag, PostHashtag } from '../modules/posts/entities';
+export {
+  Post,
+  PostComment,
+  PostImage,
+  PostLike,
+  Hashtag,
+  PostHashtag,
+} from '../modules/posts/entities';
 export { Notification } from '../modules/notifications/entities/notification.entity';
 export { DeviceToken } from '../modules/notifications/entities/device-token.entity';
 export { UserInteraction } from '../modules/user-interactions/entities/user-interaction.entity';
@@ -29,9 +39,10 @@ export { Conversation } from '../modules/chats/entities/conversation.entity';
 export { Message } from '../modules/chats/entities/message.entity';
 export { AiChatSession, AiChatMessage } from '../modules/ai-chatbot/entities';
 export {
-	Livestream,
-	LivestreamComment,
-	LivestreamProduct,
-	LivestreamOrder,
+  Livestream,
+  LivestreamComment,
+  LivestreamProduct,
+  LivestreamOrder,
 } from '../modules/livestreams/entities';
 export { Payment, PaymentRetry } from '../modules/payments/entities';
+export { Shipment } from '../modules/shipments/entities/shipment.entity';
