@@ -1128,6 +1128,10 @@ export class OrdersService {
       if (order.user.id !== userId)
         throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
 
+      if (order.status === OrderStatus.DELIVERED) {
+        return; // Đã được webhook cập nhật thành công, không cần ném lỗi
+      }
+
       if (
         order.status !== OrderStatus.OUT_FOR_DELIVERY &&
         order.status !== OrderStatus.IN_TRANSIT
