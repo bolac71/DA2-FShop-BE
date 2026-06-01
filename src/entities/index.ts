@@ -46,3 +46,4 @@ export {
 } from '../modules/livestreams/entities';
 export { Payment, PaymentRetry } from '../modules/payments/entities';
 export { Shipment } from '../modules/shipments/entities/shipment.entity';
+export { Outfit, OutfitItem, OutfitSlot } from '../modules/outfits/entities';

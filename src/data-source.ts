@@ -45,6 +45,8 @@ import {
   Payment,
   PaymentRetry,
   Shipment,
+  Outfit,
+  OutfitItem,
 } from './entities';
 
 /**
@@ -106,6 +108,8 @@ export const AppDataSource = new DataSource({
     Payment,
     PaymentRetry,
     Shipment,
+    Outfit,
+    OutfitItem,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

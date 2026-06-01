@@ -18,6 +18,7 @@ import { Review } from 'src/modules/reviews/entities/review.entity';
 import { Post, PostComment, PostLike } from 'src/modules/posts/entities';
 import { Notification } from 'src/modules/notifications/entities/notification.entity';
 import { DeviceToken } from 'src/modules/notifications/entities/device-token.entity';
+import { Outfit } from 'src/modules/outfits/entities/outfit.entity';
 
 @Entity('users')
 export class User {
@@ -106,4 +107,8 @@ export class User {
   @OneToMany(() => DeviceToken, (deviceToken) => deviceToken.user)
   @Exclude()
   deviceTokens: DeviceToken[];
+
+  @OneToMany(() => Outfit, (outfit) => outfit.user)
+  @Exclude()
+  outfits: Outfit[];
 }
