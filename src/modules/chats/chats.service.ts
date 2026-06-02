@@ -15,6 +15,7 @@ import { User } from 'src/modules/users/entities/user.entity';
 import { Role } from 'src/constants';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { Product } from '../products/entities/product.entity';
+import { Order } from '../orders/entities/order.entity';
 
 @Injectable()
 export class ChatsService {
@@ -30,6 +31,9 @@ export class ChatsService {
 
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
+
+    @InjectRepository(Order)
+    private readonly orderRepo: Repository<Order>,
 
     private readonly gateway: ChatGateway,
     private readonly cloudinaryService: CloudinaryService,
@@ -80,8 +84,9 @@ export class ChatsService {
       (files.video && files.video.length > 0)
     );
     const hasProducts = Array.isArray(dto.productIds) && dto.productIds.length > 0;
+    const hasOrders = Array.isArray(dto.orderIds) && dto.orderIds.length > 0;
 
-    if (!hasContent && !hasFiles && !hasProducts) {
+    if (!hasContent && !hasFiles && !hasProducts && !hasOrders) {
       throw new HttpException('Message must have content or attachments', HttpStatus.BAD_REQUEST);
     }
 
@@ -126,6 +131,37 @@ export class ChatsService {
               brandName: product.brand?.name ?? null,
               categoryName: product.category?.name ?? null,
               department: product.category?.department ?? null,
+            },
+          });
+        });
+      }
+
+      if (hasOrders) {
+        const orders = await this.orderRepo.find({
+          where: { id: In(dto.orderIds ?? []) },
+          relations: ['items', 'items.variant', 'items.variant.product', 'items.variant.product.images'],
+        });
+
+        const orderMap = new Map(orders.map((order) => [order.id, order]));
+
+        (dto.orderIds ?? []).forEach((orderId) => {
+          const order = orderMap.get(orderId);
+          if (!order) {
+            return;
+          }
+
+          const firstItem = order.items?.[0];
+          const imageUrl = firstItem?.variant?.imageUrl || firstItem?.variant?.product?.images?.[0]?.imageUrl || null;
+
+          attachments.push({
+            type: 'order',
+            order: {
+              id: order.id,
+              totalAmount: Number(order.totalAmount),
+              status: order.status,
+              createdAt: order.createdAt,
+              itemsCount: order.items?.reduce((sum, item) => sum + item.quantity, 0) || 0,
+              imageUrl,
             },
           });
         });
