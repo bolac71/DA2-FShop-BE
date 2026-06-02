@@ -225,27 +225,39 @@ export class ReviewsService {
     const reviews = await this.reviewRepository
       .createQueryBuilder('r')
       .innerJoinAndSelect('r.variant', 'v')
+      .leftJoinAndSelect('v.color', 'color')
+      .leftJoinAndSelect('v.size', 'size')
       .innerJoinAndSelect('r.user', 'u')
       .leftJoinAndSelect('r.images', 'img')
       .leftJoinAndSelect('r.votes', 'vote')
+      .leftJoinAndSelect('r.order', 'o')
+      .leftJoinAndSelect('o.items', 'oi', 'oi.variant_id = r.variant_id')
       .where('v.product = :productId', { productId })
       .andWhere('r.isActive = :isActive', { isActive: true })
       .andWhere('r.moderationStatus != :flagged', { flagged: 'flagged' })
       .orderBy('r.createdAt', 'DESC')
       .getMany();
 
-    return reviews.map((r) => ({
-      id: r.id,
-      rating: r.rating,
-      comment: r.comment,
-      user: {
-        id: r.user.id,
-        name: r.user.fullName,
-      },
-      images: r.images.map((img) => img.imageUrl),
-      helpfulCount: r.votes.filter((v) => v.isHelpful).length,
-      createdAt: r.createdAt,
-    }));
+    return reviews.map((r) => {
+      const colorName = r.variant?.color?.name || '';
+      const sizeName = r.variant?.size?.name || '';
+      const variantName = [colorName, sizeName].filter(Boolean).join(', ');
+
+      return {
+        id: r.id,
+        rating: r.rating,
+        comment: r.comment,
+        user: {
+          id: r.user.id,
+          name: r.user.fullName,
+        },
+        images: r.images.map((img) => img.imageUrl),
+        helpfulCount: r.votes.filter((v) => v.isHelpful).length,
+        createdAt: r.createdAt,
+        variantName,
+        quantity: r.order?.items?.[0]?.quantity || 1,
+      };
+    });
   }
 
   async getReviewSummary(productId: number) {

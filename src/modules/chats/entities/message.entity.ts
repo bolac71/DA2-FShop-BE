@@ -9,7 +9,7 @@ import {
 import { Conversation } from './conversation.entity';
 import { User } from 'src/modules/users/entities/user.entity';
 
-export type AttachmentType = 'image' | 'voice' | 'video' | 'product';
+export type AttachmentType = 'image' | 'voice' | 'video' | 'product' | 'order';
 
 export type ProductAttachment = {
   id: number;
@@ -19,6 +19,15 @@ export type ProductAttachment = {
   brandName?: string | null;
   categoryName?: string | null;
   department?: string | null;
+};
+
+export type OrderAttachment = {
+  id: number;
+  totalAmount: number;
+  status: string;
+  createdAt: Date;
+  itemsCount: number;
+  imageUrl?: string | null;
 };
 
 export interface MessageAttachment {
@@ -34,6 +43,7 @@ export interface MessageAttachment {
   };
   format?: string;
   product?: ProductAttachment;
+  order?: OrderAttachment;
 }
 
 @Entity('messages')

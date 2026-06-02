@@ -575,6 +575,7 @@ export class OrdersService {
       .leftJoinAndSelect('order.items', 'items')
       .leftJoinAndSelect('items.variant', 'variant')
       .leftJoinAndSelect('variant.product', 'product')
+      .leftJoinAndSelect('product.images', 'images')
       .leftJoin('order.user', 'user')
       .where('user.id = :userId', { userId })
       .distinct(true);
@@ -589,7 +590,7 @@ export class OrdersService {
       qb.andWhere(
         new Brackets((subQb) => {
           subQb
-            .where('CAST(order.id AS CHAR) LIKE :search', {
+            .where('CAST(order.id AS VARCHAR) LIKE :search', {
               search: normalizedSearch,
             })
             .orWhere('LOWER(order.recipientName) LIKE LOWER(:search)', {
@@ -620,22 +621,61 @@ export class OrdersService {
   }
 
   async getAll(query: OrderQueryDto) {
-    const { page, limit, search, sortBy = 'id', sortOrder, status } = query;
-    const where: FindOptionsWhere<Order>[] = [];
-    if (search) {
-      where.push(
-        { note: Like(`%${search}%`), ...(status && { status }) },
-        { detailAddress: Like(`%${search}%`), ...(status && { status }) },
-      );
-    } else {
-      where.push({ ...(status && { status }) });
+    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC', status } = query;
+    const sortFieldMap: Record<string, string> = {
+      id: 'order.id',
+      createdAt: 'order.createdAt',
+      updatedAt: 'order.updatedAt',
+      totalAmount: 'order.totalAmount',
+      status: 'order.status',
+    };
+
+    const qb = this.orderRepository
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.items', 'items')
+      .leftJoinAndSelect('items.variant', 'variant')
+      .leftJoinAndSelect('variant.product', 'product')
+      .leftJoinAndSelect('product.images', 'images')
+      .leftJoinAndSelect('order.user', 'user')
+      .distinct(true);
+
+    if (status) {
+      qb.andWhere('order.status = :status', { status });
     }
-    const [data, total] = await this.orderRepository.findAndCount({
-      where,
-      relations: ['items', 'items.variant', 'user'],
-      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { [sortBy]: sortOrder },
-    });
+
+    if (search?.trim()) {
+      const normalizedSearch = `%${search.trim()}%`;
+
+      qb.andWhere(
+        new Brackets((subQb) => {
+          subQb
+            .where('CAST(order.id AS VARCHAR) LIKE :search', {
+              search: normalizedSearch,
+            })
+            .orWhere('LOWER(order.recipientName) LIKE LOWER(:search)', {
+              search: normalizedSearch,
+            })
+            .orWhere('LOWER(order.detailAddress) LIKE LOWER(:search)', {
+              search: normalizedSearch,
+            })
+            .orWhere('LOWER(order.note) LIKE LOWER(:search)', {
+              search: normalizedSearch,
+            })
+            .orWhere('LOWER(product.name) LIKE LOWER(:search)', {
+              search: normalizedSearch,
+            });
+        }),
+      );
+    }
+
+    qb.orderBy(sortFieldMap[sortBy] ?? 'order.id', sortOrder);
+
+    if (page && limit) {
+      qb.take(limit).skip((page - 1) * limit);
+    }
+
+    const [data, total] = await qb.getManyAndCount();
+
     const response = {
       pagination: {
         total,
