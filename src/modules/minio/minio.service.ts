@@ -1,5 +1,15 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+  S3ServiceException,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   HttpException,
   HttpStatus,
@@ -11,8 +21,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { MinioFileDto } from './dtos/minio-file.dto';
-import { S3FileInfo, S3FileStat, SupabaseS3Client } from './supabase-s3.client';
+
+type S3Body = Readable | NodeReadableStream | Blob;
 
 @Injectable()
 export class MinioService implements OnModuleInit {
@@ -21,12 +35,14 @@ export class MinioService implements OnModuleInit {
 
   constructor(
     @Inject('MINIO_CLIENT')
-    private readonly minioClient: SupabaseS3Client,
+    private readonly minioClient: S3Client,
     private readonly configService: ConfigService,
   ) {
-    const bucketName = this.configService.get<string>('MINIO_BUCKET_NAME');
+    const bucketName =
+      this.configService.get<string>('STORAGE_BUCKET_NAME') ??
+      this.configService.get<string>('MINIO_BUCKET_NAME');
     if (!bucketName) {
-      throw new Error('MINIO_BUCKET_NAME is required');
+      throw new Error('STORAGE_BUCKET_NAME is required');
     }
 
     this.bucketName = bucketName;
@@ -38,39 +54,37 @@ export class MinioService implements OnModuleInit {
 
   private async ensureBucketExists(): Promise<void> {
     try {
-      const exists = await this.minioClient.bucketExists(this.bucketName);
-
-      if (exists) {
-        this.logger.log(`MinIO bucket already exists: ${this.bucketName}`);
-        return;
-      }
-
-      this.logger.log(`Creating MinIO bucket: ${this.bucketName}`);
-      await this.minioClient.createBucket(this.bucketName);
-      this.logger.log(`MinIO bucket created: ${this.bucketName}`);
-    } catch (error: any) {
-      const errorName = error?.code || error?.name;
-
-      if (errorName === 'BucketAlreadyExists' || errorName === 'BucketAlreadyOwnedByYou') {
-        this.logger.log(`MinIO bucket already exists: ${this.bucketName}`);
-        return;
-      }
-
+      await this.minioClient.send(
+        new HeadBucketCommand({ Bucket: this.bucketName }),
+      );
+      this.logger.log(`Storage bucket is available: ${this.bucketName}`);
+    } catch (error: unknown) {
       this.logger.error(
-        `Failed to initialize MinIO bucket: ${error?.message || error}`,
+        `Failed to initialize storage bucket "${this.bucketName}": ${this.describeS3Error(error)}`,
       );
       this.logger.warn(
-        'MinIO is not available. Backup/restore features will not work.',
+        'Cloud object storage is not available. Backup/restore features will not work.',
       );
     }
   }
 
   async uploadFile(fileName: string, filePath: string): Promise<void> {
     try {
-      await this.minioClient.putObject(this.bucketName, fileName, filePath);
+      const fileStats = fs.statSync(filePath);
+      await this.minioClient.send(
+        new PutObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileName,
+          Body: fs.createReadStream(filePath),
+          ContentLength: fileStats.size,
+        }),
+      );
     } catch (error) {
+      this.logger.error(
+        `Failed to upload file "${fileName}" to storage: ${this.describeS3Error(error)}`,
+      );
       throw new HttpException(
-        'Failed to upload file to MinIO',
+        'Failed to upload file to storage',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -81,13 +95,30 @@ export class MinioService implements OnModuleInit {
     destinationPath: string,
   ): Promise<void> {
     try {
-      await this.minioClient.downloadObject(this.bucketName, fileName, destinationPath);
-    } catch (error: any) {
-      if (error?.code === 'NoSuchKey') {
-        throw new NotFoundException(`File ${fileName} not found in MinIO`);
+      const response = await this.minioClient.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileName,
+        }),
+      );
+
+      if (!response.Body) {
+        throw new Error('Empty download response body');
       }
+
+      await pipeline(
+        this.toReadableStream(response.Body as S3Body),
+        fs.createWriteStream(destinationPath),
+      );
+    } catch (error: unknown) {
+      if (this.isNotFoundError(error)) {
+        throw new NotFoundException(`File ${fileName} not found in storage`);
+      }
+      this.logger.error(
+        `Failed to download file "${fileName}" from storage: ${this.describeS3Error(error)}`,
+      );
       throw new HttpException(
-        'Failed to download file from MinIO',
+        'Failed to download file from storage',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -95,13 +126,21 @@ export class MinioService implements OnModuleInit {
 
   async deleteFile(fileName: string): Promise<void> {
     try {
-      await this.minioClient.deleteObject(this.bucketName, fileName);
-    } catch (error: any) {
-      if (error?.code === 'NoSuchKey') {
-        throw new NotFoundException(`File ${fileName} not found in MinIO`);
+      await this.minioClient.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileName,
+        }),
+      );
+    } catch (error: unknown) {
+      if (this.isNotFoundError(error)) {
+        throw new NotFoundException(`File ${fileName} not found in storage`);
       }
+      this.logger.error(
+        `Failed to delete file "${fileName}" from storage: ${this.describeS3Error(error)}`,
+      );
       throw new HttpException(
-        'Failed to delete file from MinIO',
+        'Failed to delete file from storage',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -109,17 +148,24 @@ export class MinioService implements OnModuleInit {
 
   async listFiles(): Promise<MinioFileDto[]> {
     try {
-      const files = await this.minioClient.listObjects(this.bucketName);
+      const response = await this.minioClient.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucketName,
+        }),
+      );
 
-      return files.map((file) => ({
-        fileName: file.fileName,
-        size: file.size,
-        etag: file.etag,
-        lastModified: file.lastModified,
+      return (response.Contents ?? []).map((file) => ({
+        fileName: file.Key ?? '',
+        size: file.Size ?? 0,
+        etag: (file.ETag ?? '').replaceAll('"', ''),
+        lastModified: file.LastModified ?? new Date(0),
       }));
     } catch (error) {
+      this.logger.error(
+        `Failed to list files from storage: ${this.describeS3Error(error)}`,
+      );
       throw new HttpException(
-        'Failed to list files from MinIO',
+        'Failed to list files from storage',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -127,11 +173,21 @@ export class MinioService implements OnModuleInit {
 
   async getFileUrl(fileName: string, expiresIn = 3600) {
     try {
-      return this.minioClient.getSignedObjectUrl(this.bucketName, fileName, expiresIn);
-    } catch (error: any) {
-      if (error?.code === 'NoSuchKey') {
-        throw new NotFoundException(`File ${fileName} not found in MinIO`);
+      return getSignedUrl(
+        this.minioClient,
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileName,
+        }),
+        { expiresIn },
+      );
+    } catch (error: unknown) {
+      if (this.isNotFoundError(error)) {
+        throw new NotFoundException(`File ${fileName} not found in storage`);
       }
+      this.logger.error(
+        `Failed to generate presigned URL for "${fileName}": ${this.describeS3Error(error)}`,
+      );
       throw new HttpException(
         'Failed to generate presigned URL',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -139,17 +195,75 @@ export class MinioService implements OnModuleInit {
     }
   }
 
-  async getFileStat(fileName: string): Promise<S3FileStat> {
+  async getFileStat(fileName: string) {
     try {
-      return this.minioClient.headObject(this.bucketName, fileName);
-    } catch (error: any) {
-      if (error?.code === 'NoSuchKey') {
-        throw new NotFoundException(`File ${fileName} not found in MinIO`);
+      const response = await this.minioClient.send(
+        new HeadObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileName,
+        }),
+      );
+
+      return {
+        size: response.ContentLength ?? 0,
+        etag: (response.ETag ?? '').replaceAll('"', ''),
+        lastModified: response.LastModified ?? new Date(0),
+      };
+    } catch (error: unknown) {
+      if (this.isNotFoundError(error)) {
+        throw new NotFoundException(`File ${fileName} not found in storage`);
       }
+      this.logger.error(
+        `Failed to get file stats for "${fileName}": ${this.describeS3Error(error)}`,
+      );
       throw new HttpException(
-        'Failed to get file stats from MinIO',
+        'Failed to get file stats from storage',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private toReadableStream(body: S3Body): Readable {
+    if (body instanceof Readable) {
+      return body;
+    }
+
+    if (body instanceof Blob) {
+      return Readable.fromWeb(body.stream() as NodeReadableStream);
+    }
+
+    return Readable.fromWeb(body);
+  }
+
+  private isNotFoundError(error: unknown) {
+    if (!(error instanceof S3ServiceException)) {
+      return false;
+    }
+
+    return (
+      error.name === 'NoSuchKey' ||
+      error.name === 'NotFound' ||
+      error.$metadata.httpStatusCode === 404
+    );
+  }
+
+  private describeS3Error(error: unknown) {
+    if (error instanceof S3ServiceException) {
+      return [
+        error.name,
+        error.$metadata.httpStatusCode
+          ? `status ${error.$metadata.httpStatusCode}`
+          : undefined,
+        error.message,
+      ]
+        .filter(Boolean)
+        .join(' - ');
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 }

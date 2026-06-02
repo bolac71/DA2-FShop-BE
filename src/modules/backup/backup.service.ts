@@ -55,6 +55,22 @@ export class BackupService {
     });
   }
 
+  private runCommandBuffer(
+    command: string,
+    args: string[],
+    env?: NodeJS.ProcessEnv,
+    input?: Buffer,
+  ): Buffer {
+    return execFileSync(command, args, {
+      stdio: 'pipe',
+      input,
+      env: {
+        ...process.env,
+        ...env,
+      },
+    });
+  }
+
   private hasDockerContainer(containerName: string): boolean {
     try {
       this.runCommand('docker', ['inspect', containerName]);
@@ -62,6 +78,92 @@ export class BackupService {
     } catch {
       return false;
     }
+  }
+
+  private shouldUseDockerDatabase(containerName: string | undefined, dbHost: string) {
+    if (!containerName) {
+      return false;
+    }
+
+    const localHosts = new Set([
+      'localhost',
+      '127.0.0.1',
+      '::1',
+      'postgres',
+      containerName,
+    ]);
+
+    return localHosts.has(dbHost) && this.hasDockerContainer(containerName);
+  }
+
+  private getPostgresClientEnv(dbPassword: string): NodeJS.ProcessEnv {
+    const useSsl = this.configService.get<string>('DB_USE_SSL') === 'true';
+
+    return {
+      PGPASSWORD: dbPassword,
+      ...(useSsl ? { PGSSLMODE: 'require' } : {}),
+    };
+  }
+
+  private hasCommand(command: string): boolean {
+    try {
+      this.runCommand(process.platform === 'win32' ? 'where' : 'which', [
+        command,
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private getDockerEnvArgs(env: NodeJS.ProcessEnv): string[] {
+    return Object.entries(env).flatMap(([key, value]) =>
+      value ? ['-e', `${key}=${value}`] : [],
+    );
+  }
+
+  private runDockerPostgresClientCommand(
+    containerName: string,
+    command: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+  ): void {
+    this.runCommand('docker', [
+      'exec',
+      ...this.getDockerEnvArgs(env),
+      containerName,
+      command,
+      ...args,
+    ]);
+  }
+
+  private getPostgresClientImage() {
+    return (
+      this.configService.get<string>('POSTGRES_CLIENT_IMAGE') ??
+      'postgres:17-alpine'
+    );
+  }
+
+  private runDockerImagePostgresClientCommand(
+    command: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    input?: Buffer,
+  ): Buffer {
+    return this.runCommandBuffer(
+      'docker',
+      [
+        'run',
+        '--rm',
+        '-i',
+        ...this.getDockerEnvArgs(env),
+        this.getPostgresClientImage(),
+        command,
+        ...args,
+      ],
+      undefined,
+      input,
+    );
   }
 
   private getDatabaseConfig() {
@@ -98,14 +200,15 @@ export class BackupService {
     try {
       this.logger.log(`Starting database backup: ${filename}`);
 
-      if (containerName && this.hasDockerContainer(containerName)) {
+      if (this.shouldUseDockerDatabase(containerName, dbHost)) {
+        const dockerContainerName = containerName as string;
         const containerBackupPath = `/tmp/${filename}`;
 
         this.runCommand('docker', [
           'exec',
           '-e',
           `PGPASSWORD=${dbPassword}`,
-          containerName,
+          dockerContainerName,
           'pg_dump',
           '-U',
           dbUsername,
@@ -123,7 +226,7 @@ export class BackupService {
 
         this.runCommand('docker', [
           'cp',
-          `${containerName}:${containerBackupPath}`,
+          `${dockerContainerName}:${containerBackupPath}`,
           tempFilePath,
         ]);
         this.logger.log(`Backup copied to host: ${tempFilePath}`);
@@ -131,7 +234,7 @@ export class BackupService {
         try {
           this.runCommand('docker', [
             'exec',
-            containerName,
+            dockerContainerName,
             'rm',
             containerBackupPath,
           ]);
@@ -143,32 +246,59 @@ export class BackupService {
           'Docker container not found, using direct pg_dump against managed database',
         );
 
-        this.runCommand(
-          'pg_dump',
-          [
-            '-h',
-            dbHost,
-            '-p',
-            dbPort,
-            '-U',
-            dbUsername,
-            '-d',
-            dbName,
-            '-F',
-            'c',
-            '-f',
-            tempFilePath,
-          ],
-          { PGPASSWORD: dbPassword },
-        );
+        const postgresClientEnv = this.getPostgresClientEnv(dbPassword);
+
+        if (this.hasCommand('pg_dump')) {
+          this.runCommand(
+            'pg_dump',
+            [
+              '-h',
+              dbHost,
+              '-p',
+              dbPort,
+              '-U',
+              dbUsername,
+              '-d',
+              dbName,
+              '-F',
+              'c',
+              '-f',
+              tempFilePath,
+            ],
+            postgresClientEnv,
+          );
+        } else {
+          this.logger.log(
+            `Local pg_dump not found, using Docker image ${this.getPostgresClientImage()} against managed database`,
+          );
+
+          const dump = this.runDockerImagePostgresClientCommand(
+            'pg_dump',
+            [
+              '-h',
+              dbHost,
+              '-p',
+              dbPort,
+              '-U',
+              dbUsername,
+              '-d',
+              dbName,
+              '-F',
+              'c',
+            ],
+            postgresClientEnv,
+          );
+
+          fs.writeFileSync(tempFilePath, dump);
+        }
 
         this.logger.log(`Backup copied to host: ${tempFilePath}`);
       }
 
-      // Step 4: Upload to MinIO
+      // Step 4: Upload to object storage
       await this.minioService.uploadFile(filename, tempFilePath);
 
-      this.logger.log(`Backup uploaded to MinIO: ${filename}`);
+      this.logger.log(`Backup uploaded to object storage: ${filename}`);
 
       // Get file stats
       const fileStats = fs.statSync(tempFilePath);
@@ -239,18 +369,19 @@ export class BackupService {
     try {
       this.logger.log(`Starting database restore from: ${filename}`);
 
-      // Step 1: Download backup file from MinIO
+      // Step 1: Download backup file from object storage
       await this.minioService.downloadFile(filename, tempFilePath);
 
       this.logger.log(`Backup downloaded to ${tempFilePath}`);
 
-      if (containerName && this.hasDockerContainer(containerName)) {
+      if (this.shouldUseDockerDatabase(containerName, dbHost)) {
+        const dockerContainerName = containerName as string;
         const containerBackupPath = `/tmp/${filename}`;
 
         this.runCommand('docker', [
           'cp',
           tempFilePath,
-          `${containerName}:${containerBackupPath}`,
+          `${dockerContainerName}:${containerBackupPath}`,
         ]);
         this.logger.log(`Backup copied to container: ${containerBackupPath}`);
 
@@ -259,7 +390,7 @@ export class BackupService {
             'exec',
             '-e',
             `PGPASSWORD=${dbPassword}`,
-            containerName,
+            dockerContainerName,
             'psql',
             '-U',
             dbUsername,
@@ -279,7 +410,7 @@ export class BackupService {
           'exec',
           '-e',
           `PGPASSWORD=${dbPassword}`,
-          containerName,
+          dockerContainerName,
           'psql',
           '-U',
           dbUsername,
@@ -295,7 +426,7 @@ export class BackupService {
           'exec',
           '-e',
           `PGPASSWORD=${dbPassword}`,
-          containerName,
+          dockerContainerName,
           'pg_restore',
           '-U',
           dbUsername,
@@ -311,7 +442,7 @@ export class BackupService {
         try {
           this.runCommand('docker', [
             'exec',
-            containerName,
+            dockerContainerName,
             'rm',
             containerBackupPath,
           ]);
@@ -323,7 +454,35 @@ export class BackupService {
           'Docker container not found, using direct pg_restore against managed database',
         );
 
-        try {
+        const postgresClientEnv = this.getPostgresClientEnv(dbPassword);
+        const canUseLocalPostgresTools =
+          this.hasCommand('psql') && this.hasCommand('pg_restore');
+
+        if (canUseLocalPostgresTools) {
+          try {
+            this.runCommand(
+              'psql',
+              [
+                '-h',
+                dbHost,
+                '-p',
+                dbPort,
+                '-U',
+                dbUsername,
+                '-d',
+                dbName,
+                '-c',
+                'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();',
+              ],
+              postgresClientEnv,
+            );
+            this.logger.log('Active database connections terminated');
+          } catch (error: any) {
+            this.logger.warn(
+              `Failed to terminate connections (this is OK if no active connections): ${error.message}`,
+            );
+          }
+
           this.runCommand(
             'psql',
             [
@@ -336,53 +495,96 @@ export class BackupService {
               '-d',
               dbName,
               '-c',
-              'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();',
+              'DROP SCHEMA public CASCADE; CREATE SCHEMA public;',
             ],
-            { PGPASSWORD: dbPassword },
+            postgresClientEnv,
           );
-          this.logger.log('Active database connections terminated');
-        } catch (error: any) {
-          this.logger.warn(
-            `Failed to terminate connections (this is OK if no active connections): ${error.message}`,
+
+          this.logger.log('Schema dropped and recreated');
+
+          this.runCommand(
+            'pg_restore',
+            [
+              '-h',
+              dbHost,
+              '-p',
+              dbPort,
+              '-U',
+              dbUsername,
+              '-d',
+              dbName,
+              '-F',
+              'c',
+              tempFilePath,
+            ],
+            postgresClientEnv,
+          );
+        } else {
+          this.logger.log(
+            `Local postgres restore tools not found, using Docker image ${this.getPostgresClientImage()} against managed database`,
+          );
+
+          try {
+            this.runDockerImagePostgresClientCommand(
+              'psql',
+              [
+                '-h',
+                dbHost,
+                '-p',
+                dbPort,
+                '-U',
+                dbUsername,
+                '-d',
+                dbName,
+                '-c',
+                'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();',
+              ],
+              postgresClientEnv,
+            );
+            this.logger.log('Active database connections terminated');
+          } catch (error: any) {
+            this.logger.warn(
+              `Failed to terminate connections (this is OK if no active connections): ${error.message}`,
+            );
+          }
+
+          this.runDockerImagePostgresClientCommand(
+            'psql',
+            [
+              '-h',
+              dbHost,
+              '-p',
+              dbPort,
+              '-U',
+              dbUsername,
+              '-d',
+              dbName,
+              '-c',
+              'DROP SCHEMA public CASCADE; CREATE SCHEMA public;',
+            ],
+            postgresClientEnv,
+          );
+
+          this.logger.log('Schema dropped and recreated');
+
+          this.runDockerImagePostgresClientCommand(
+            'pg_restore',
+            [
+              '-h',
+              dbHost,
+              '-p',
+              dbPort,
+              '-U',
+              dbUsername,
+              '-d',
+              dbName,
+              '-F',
+              'c',
+            ],
+            postgresClientEnv,
+            fs.readFileSync(tempFilePath),
           );
         }
-
-        this.runCommand(
-          'psql',
-          [
-            '-h',
-            dbHost,
-            '-p',
-            dbPort,
-            '-U',
-            dbUsername,
-            '-d',
-            dbName,
-            '-c',
-            'DROP SCHEMA public CASCADE; CREATE SCHEMA public;',
-          ],
-          { PGPASSWORD: dbPassword },
-        );
-
-        this.logger.log('Schema dropped and recreated');
-
-        this.runCommand(
-          'pg_restore',
-          [
-            '-h',
-            dbHost,
-            '-p',
-            dbPort,
-            '-U',
-            dbUsername,
-            '-d',
-            dbName,
-            '-F',
-            'c',
-            tempFilePath,
-          ],
-          { PGPASSWORD: dbPassword },
-        );
 
         this.logger.log(`Database restored successfully from ${filename}`);
       }

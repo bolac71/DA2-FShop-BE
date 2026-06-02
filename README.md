@@ -280,13 +280,21 @@ REDIS_PASSWORD=
 # AI
 AI_SERVER_URL=http://localhost:8000
 
-# Storage
-MINIO_ENDPOINT=localhost
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET_NAME=fshop-backups
+# Cloud object storage for backup/restore (Cloudflare R2)
+STORAGE_PROVIDER=r2
+STORAGE_ENDPOINT=https://<cloudflare_account_id>.r2.cloudflarestorage.com
+STORAGE_REGION=auto
+STORAGE_ACCESS_KEY_ID=<r2_access_key_id>
+STORAGE_SECRET_ACCESS_KEY=<r2_secret_access_key>
+STORAGE_BUCKET_NAME=fshop-backups
+
+# Optional local MinIO fallback
+# MINIO_ENDPOINT=localhost
+# MINIO_PORT=9000
+# MINIO_USE_SSL=false
+# MINIO_ACCESS_KEY=minioadmin
+# MINIO_SECRET_KEY=minioadmin
+# MINIO_BUCKET_NAME=fshop-backups
 
 # Frontend
 FE_URL=http://localhost:3000
@@ -415,16 +423,17 @@ npm run start:dev
 ### STORAGE Configuration (Optional)
 
 | Biến | Kiểu | Mô Tả |
-|------|------|-------|
+|------|------|---------|-------|
 | `CLOUDINARY_NAME` | string | Cloudinary account name (cho upload ảnh) |
-| `CLOUDINARY_API_KEY` | string | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | string | Cloudinary API secret |
-| `MINIO_ENDPOINT` | string | MinIO server endpoint (Storage alternative) |
-| `MINIO_PORT` | number | `9000` | MinIO port |
-| `MINIO_USE_SSL` | boolean | `false` | Dùng SSL khi kết nối MinIO |
-| `MINIO_ACCESS_KEY` | string | MinIO access key |
-| `MINIO_SECRET_KEY` | string | MinIO secret key |
-| `MINIO_BUCKET_NAME` | string | `fshop-backups` | Tên bucket MinIO |
+| `CLOUDINARY_API_KEY` | string | - | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | string | - | Cloudinary API secret |
+| `STORAGE_PROVIDER` | string | `r2` | Cloud object storage provider cho backup/restore |
+| `STORAGE_ENDPOINT` | string | - | Cloudflare R2 endpoint: `https://<account_id>.r2.cloudflarestorage.com` |
+| `STORAGE_REGION` | string | `auto` | Region cho S3-compatible storage |
+| `STORAGE_ACCESS_KEY_ID` | string | - | R2 access key ID |
+| `STORAGE_SECRET_ACCESS_KEY` | string | - | R2 secret access key |
+| `STORAGE_BUCKET_NAME` | string | `fshop-backups` | Tên bucket backup/restore |
+| `MINIO_*` | string | - | Optional fallback cho local MinIO |
 
 ---
 
