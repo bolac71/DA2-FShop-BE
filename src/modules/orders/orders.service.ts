@@ -1036,10 +1036,33 @@ export class OrdersService {
           );
         }
 
+        // Determine who pays for shipping in GOSHIP:
+        // - If COD -> shop pays (0)
+        // - If MOMO and payment completed -> shop pays (0) (per product requirement)
+        // - Otherwise default to customer pays (1)
+        let payer: 0 | 1 = 1;
+        try {
+          if (order.paymentMethod === PaymentMethod.COD) {
+            payer = 0;
+          } else if (order.paymentMethod === PaymentMethod.MOMO) {
+            const payment = await this.paymentRepository.findOne({
+              where: { orderId: order.id },
+            });
+            if (payment && payment.status === PaymentStatus.COMPLETED) {
+              payer = 0; // shop pays when MOMO already completed
+            } else {
+              payer = 1;
+            }
+          }
+        } catch (e) {
+          this.logger.warn(`Failed to resolve payment for order=${order.id}, defaulting payer=1`, e instanceof Error ? e.stack : String(e));
+          payer = 1;
+        }
+
         // Step 2: create shipment using selected rate id
         const res = await GoshipClient.createShipment({
           rateId: selectedRate.id,
-          payer: 0,
+          payer,
           addressFrom: shipperAddress,
           addressTo: recipientAddress,
           parcel,
