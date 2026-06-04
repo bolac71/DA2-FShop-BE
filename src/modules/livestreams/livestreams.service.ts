@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { ILike, Repository } from 'typeorm';
+import { ILike, In, Not, Repository } from 'typeorm';
 import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { RtcRole, RtcTokenBuilder } from 'agora-token';
@@ -24,6 +24,7 @@ import { Product } from '../products/entities/product.entity';
 import { Order } from '../orders/entities';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CloudinaryResponse } from '../cloudinary/dto/cloudinary-response';
+import { ModerationService } from '../moderation/moderation.service';
 
 @Injectable()
 export class LivestreamsService {
@@ -47,6 +48,7 @@ export class LivestreamsService {
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly moderationService: ModerationService,
   ) {}
 
   async create(
@@ -289,7 +291,7 @@ export class LivestreamsService {
     await this.ensureLivestreamExists(livestreamId);
     const { page, limit, sortOrder = 'DESC' } = query;
     const [data, total] = await this.livestreamCommentRepository.findAndCount({
-      where: { livestreamId, isActive: true },
+      where: { livestreamId, isActive: true, moderationStatus: Not(In(['flagged', 'rejected'])) },
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { createdAt: sortOrder },
       relations: ['user'],
@@ -331,6 +333,10 @@ export class LivestreamsService {
     if (!hydratedComment) {
       throw new HttpException('Comment not found', HttpStatus.NOT_FOUND);
     }
+
+    this.moderationService
+      .moderateContent(dto.content, 'livestream_comment', hydratedComment.id, userId)
+      .catch((err: Error) => this.logger.warn(`Livestream comment moderation failed: ${err.message}`));
 
     return hydratedComment;
   }
@@ -486,7 +492,7 @@ export class LivestreamsService {
           productMap.set(productId, {
             productId,
             name: pinnedProduct?.product?.name ?? `Product #${productId}`,
-            imageUrl: (pinnedProduct?.product as any)?.images?.[0]?.imageUrl,
+            imageUrl: pinnedProduct?.product?.images?.[0]?.imageUrl,
             unitsSold: item.quantity ?? 0,
             revenue: itemRevenue,
           });

@@ -15,7 +15,7 @@ import { RolesGuard } from 'src/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/constants';
 import { ModerationService } from './moderation.service';
-import { ModerationQueueQueryDto, OverrideDecisionDto } from './dtos/moderation.dto';
+import { ModerationQueueQueryDto, ModerationRecentQueryDto, OverrideDecisionDto } from './dtos/moderation.dto';
 
 @ApiTags('Moderation')
 @ApiBearerAuth()
@@ -33,6 +33,11 @@ export class ModerationController {
   @Get('stats')
   getStats() {
     return this.moderationService.getStats();
+  }
+
+  @Get('recent')
+  getRecentItems(@Query() query: ModerationRecentQueryDto) {
+    return this.moderationService.getRecentItems(query);
   }
 
   @Patch(':logId/decision')
