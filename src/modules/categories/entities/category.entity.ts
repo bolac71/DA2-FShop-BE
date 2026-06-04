@@ -4,11 +4,14 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { DepartmentType } from '../../../constants/department-type.enum';
 import Helper from 'src/utils/helpers';
+import { SlotType } from '../../slot-types/entities/slot-type.entity';
 
 @Entity('categories')
 export class Category {
@@ -39,6 +42,13 @@ export class Category {
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
+
+  @ManyToOne(() => SlotType, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'slot_type_id' })
+  slotType: SlotType;
+
+  @Column({ name: 'slot_type_id', type: 'integer', nullable: true })
+  slotTypeId: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -8,8 +8,10 @@ import { Address } from '../addresses/entities/address.entity';
 import { Cart } from '../carts/entities';
 import { CartsModule } from '../carts/carts.module';
 
+import { UserFollow } from './entities/user-follow.entity';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Address, Cart]), CloudinaryModule, CartsModule],
+  imports: [TypeOrmModule.forFeature([User, Address, Cart, UserFollow]), CloudinaryModule, CartsModule],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],

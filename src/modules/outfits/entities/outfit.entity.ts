@@ -19,6 +19,15 @@ export class Outfit {
   @Column({ type: 'varchar', length: 120 })
   name: string;
 
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ name: 'is_public', type: 'boolean', default: false })
+  isPublic: boolean;
+
+  @Column({ name: 'image_url', type: 'varchar', nullable: true })
+  imageUrl: string;
+
   @ManyToOne(() => User, (user) => user.outfits, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;

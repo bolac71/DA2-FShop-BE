@@ -39,6 +39,7 @@ import { ModerationModule } from './modules/moderation/moderation.module';
 import { RecommendationsModule } from './modules/recommendations/recommendations.module';
 import { UserInteractionsModule } from './modules/user-interactions/user-interactions.module';
 import { OutfitsModule } from './modules/outfits/outfits.module';
+import { SlotTypesModule } from './modules/slot-types/slot-types.module';
 
 
 @Module({
@@ -83,6 +84,7 @@ import { OutfitsModule } from './modules/outfits/outfits.module';
     RecommendationsModule,
     UserInteractionsModule,
     OutfitsModule,
+    SlotTypesModule,
   ],
 
   controllers: [AppController],

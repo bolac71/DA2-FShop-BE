@@ -196,8 +196,8 @@ export class AuthService {
     return userInfo;
   }
 
-  async updateMe(userId: number, dto: UpdateMeDto, file?: Express.Multer.File) {
-    const user = await this.usersService.updateOwnProfile(userId, dto, file);
+  async updateMe(userId: number, dto: UpdateMeDto, avatarFile?: Express.Multer.File, coverFile?: Express.Multer.File) {
+    const user = await this.usersService.updateOwnProfile(userId, dto, avatarFile, coverFile);
     const { password: _password, publicId: _publicId, ...userInfo } = user;
     return userInfo;
   }

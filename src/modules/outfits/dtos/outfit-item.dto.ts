@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsObject,
   IsOptional,
+  IsString,
   Max,
   Min,
 } from 'class-validator';
@@ -35,9 +36,9 @@ export class OutfitItemLayoutDto {
 }
 
 export class OutfitItemDto {
-  @ApiProperty({ enum: OutfitSlot })
-  @IsEnum(OutfitSlot)
-  slot: OutfitSlot;
+  @ApiProperty({ example: 'top' })
+  @IsString()
+  slot: string;
 
   @ApiProperty()
   @IsInt()

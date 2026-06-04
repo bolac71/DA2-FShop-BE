@@ -24,8 +24,8 @@ export class OutfitItem {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'enum', enum: OutfitSlot })
-  slot: OutfitSlot;
+  @Column({ type: 'varchar' })
+  slot: string;
 
   @Column({ type: 'int', default: 1 })
   quantity: number;

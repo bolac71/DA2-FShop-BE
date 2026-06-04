@@ -4,6 +4,7 @@
  */
 
 export { User } from '../modules/users/entities/user.entity';
+export { UserFollow } from '../modules/users/entities/user-follow.entity';
 export { Address } from '../modules/addresses/entities/address.entity';
 export { Wishlist } from '../modules/wishlists/entities/wishlist.entity';
 export { Cart } from '../modules/carts/entities/cart.entity';
@@ -47,3 +48,4 @@ export {
 export { Payment, PaymentRetry } from '../modules/payments/entities';
 export { Shipment } from '../modules/shipments/entities/shipment.entity';
 export { Outfit, OutfitItem, OutfitSlot } from '../modules/outfits/entities';
+export { SlotType } from '../modules/slot-types/entities/slot-type.entity';

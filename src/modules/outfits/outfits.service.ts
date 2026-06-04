@@ -5,7 +5,6 @@ import {
   Inventory,
   Outfit,
   OutfitItem,
-  OutfitSlot,
   Product,
   ProductVariant,
   User,
@@ -139,7 +138,7 @@ export class OutfitsService {
   }
 
   private assertUniqueSlots(items: OutfitItemDto[]) {
-    const slots = new Set<OutfitSlot>();
+    const slots = new Set<string>();
     for (const item of items) {
       if (slots.has(item.slot)) {
         throw new HttpException(
