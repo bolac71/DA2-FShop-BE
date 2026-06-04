@@ -18,4 +18,20 @@ export class UpdateMeDto {
     required: false,
   })
   avatar?: string;
+
+  @StringOptional()
+  bio?: string;
+
+  @IsOptional()
+  isBlogActive?: any;
+
+  @IsOptional()
+  @IsString()
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    description: 'Cover image file',
+    required: false,
+  })
+  coverImage?: string;
 }

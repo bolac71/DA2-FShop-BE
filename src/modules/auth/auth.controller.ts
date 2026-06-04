@@ -14,6 +14,7 @@ import {
   Req,
   Res,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -29,7 +30,7 @@ import { ChangePasswordDto, GoogleLoginDto, LinkGoogleDto, LoginDto, UpdateMeDto
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
 import type { JwtPayload } from 'src/strategies/jwt.strategy';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -131,16 +132,27 @@ export class AuthController {
 
   @Patch('me')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'avatar', maxCount: 1 },
+      { name: 'coverImage', maxCount: 1 },
+    ]),
+  )
   @ApiBearerAuth()
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Update current authenticated user profile' })
   async updateMe(
     @CurrentUser() user: JwtPayload,
     @Body() updateMeDto: UpdateMeDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFiles()
+    files?: {
+      avatar?: Express.Multer.File[];
+      coverImage?: Express.Multer.File[];
+    },
   ) {
-    return this.authService.updateMe(user.sub, updateMeDto, file);
+    const avatarFile = files?.avatar?.[0];
+    const coverFile = files?.coverImage?.[0];
+    return this.authService.updateMe(user.sub, updateMeDto, avatarFile, coverFile);
   }
 
   @Patch('change-password')

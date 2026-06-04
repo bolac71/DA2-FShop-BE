@@ -58,6 +58,19 @@ export class User {
   @Column({ name: 'is_verified', type: 'boolean', default: false })
   isVerified: boolean;
 
+  @Column({ name: 'is_blog_active', type: 'boolean', default: false })
+  isBlogActive: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  bio: string | null;
+
+  @Column({ name: 'cover_image', type: 'varchar', nullable: true })
+  coverImage: string | null;
+
+  @Column({ name: 'cover_image_public_id', type: 'varchar', nullable: true })
+  @Exclude()
+  coverImagePublicId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { DepartmentType } from 'src/constants/department-type.enum';
 import { StringOptional } from 'src/decorators/dto.decorator';
+import { Transform } from 'class-transformer';
 
 export class UpdateCategoryDto {
   @IsOptional()
@@ -30,4 +31,9 @@ export class UpdateCategoryDto {
   @StringOptional()
   @ApiProperty({ required: false, example: 'This is a category for T-Shirts' })
   description?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value ? Number(value) : undefined)
+  @ApiProperty({ required: false, example: 1 })
+  slotTypeId?: number;
 }

@@ -53,6 +53,7 @@ export class CategoriesService {
       where: search
         ? [{ isActive: true, name: ILike(`%${search}%`) }]
         : { isActive: true },
+      relations: ['slotType'],
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },
     });
@@ -72,6 +73,7 @@ export class CategoriesService {
   async getById(id: number) {
     const category = await this.categoriesRepository.findOne({
       where: { id, isActive: true },
+      relations: ['slotType'],
     });
     if (!category)
       throw new HttpException('Category not found', HttpStatus.NOT_FOUND);
@@ -81,6 +83,7 @@ export class CategoriesService {
   async getBySlug(slug: string) {
     const category = await this.categoriesRepository.findOne({
       where: { slug, isActive: true },
+      relations: ['slotType'],
     });
     if (!category)
       throw new HttpException('Category not found', HttpStatus.NOT_FOUND);

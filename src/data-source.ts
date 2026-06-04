@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
 import {
   User,
+  UserFollow,
   Address,
   Wishlist,
   Cart,
@@ -47,6 +48,7 @@ import {
   Shipment,
   Outfit,
   OutfitItem,
+  SlotType,
 } from './entities';
 
 /**
@@ -66,6 +68,7 @@ export const AppDataSource = new DataSource({
     process.env.DB_USE_SSL === 'true' ? { rejectUnauthorized: false } : false,
   entities: [
     User,
+    UserFollow,
     Address,
     Wishlist,
     Cart,
@@ -110,6 +113,7 @@ export const AppDataSource = new DataSource({
     Shipment,
     Outfit,
     OutfitItem,
+    SlotType,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

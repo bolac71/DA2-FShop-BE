@@ -63,6 +63,13 @@ export class PostsService {
           throw new HttpException('User not found', HttpStatus.NOT_FOUND);
         }
 
+        if (!user.isBlogActive) {
+          throw new HttpException(
+            'Tài khoản của bạn chưa kích hoạt tính năng viết blog',
+            HttpStatus.FORBIDDEN,
+          );
+        }
+
         const post = manager.create(Post, {
           user,
           content,

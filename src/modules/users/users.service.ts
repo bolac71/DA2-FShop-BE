@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './entities/user.entity';
+import { UserFollow } from './entities/user-follow.entity';
 import { DataSource, ILike, Repository } from 'typeorm';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
@@ -14,12 +15,15 @@ import { CartsService } from '../carts/carts.service';
 
 type UpdateOwnProfileInput = {
   fullName?: string;
+  bio?: string;
+  isBlogActive?: any;
 };
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private usersRepository: Repository<User>,
+    @InjectRepository(UserFollow) private userFollowRepository: Repository<UserFollow>,
     @InjectRedis() private readonly redis: Redis,
     private dataSource: DataSource,
     private readonly cartService: CartsService,
@@ -69,12 +73,24 @@ export class UsersService {
     await this.usersRepository.update(id, { password: hashedPassword });
   }
 
-  async findById(id: number) {
+  async findById(id: number, currentUserId?: number) {
     const user = await this.usersRepository.findOne({
       where: { id, isActive: true },
     });
     if (!user) throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
-    return user;
+
+    const followersCount = await this.userFollowRepository.count({ where: { followingId: id } });
+    const followingCount = await this.userFollowRepository.count({ where: { followerId: id } });
+    const isFollowing = currentUserId
+      ? await this.userFollowRepository.exist({ where: { followerId: currentUserId, followingId: id } })
+      : false;
+
+    return {
+      ...user,
+      followersCount,
+      followingCount,
+      isFollowing,
+    };
   }
 
   async findByIdWithCart(id: number) {
@@ -142,7 +158,8 @@ export class UsersService {
   async updateOwnProfile(
     id: number,
     updateProfileDto: UpdateOwnProfileInput,
-    file?: Express.Multer.File,
+    avatarFile?: Express.Multer.File,
+    coverFile?: Express.Multer.File,
   ) {
     const existingUser = await this.usersRepository.findOne({
       where: { id, isActive: true },
@@ -154,15 +171,34 @@ export class UsersService {
       existingUser.fullName = updateProfileDto.fullName;
     }
 
-    if (file) {
+    if (typeof updateProfileDto.bio !== 'undefined') {
+      existingUser.bio = updateProfileDto.bio;
+    }
+
+    if (typeof updateProfileDto.isBlogActive !== 'undefined') {
+      existingUser.isBlogActive = String(updateProfileDto.isBlogActive) === 'true';
+    }
+
+    if (avatarFile) {
       if (existingUser.publicId) {
         await this.cloudinaryService
           .deleteFile(existingUser.publicId)
           .catch(() => null);
       }
-      const uploaded = await this.cloudinaryService.uploadFile(file);
+      const uploaded = await this.cloudinaryService.uploadFile(avatarFile);
       existingUser.avatar = uploaded?.secure_url;
       existingUser.publicId = uploaded?.public_id;
+    }
+
+    if (coverFile) {
+      if (existingUser.coverImagePublicId) {
+        await this.cloudinaryService
+          .deleteFile(existingUser.coverImagePublicId)
+          .catch(() => null);
+      }
+      const uploaded = await this.cloudinaryService.uploadFile(coverFile);
+      existingUser.coverImage = uploaded?.secure_url;
+      existingUser.coverImagePublicId = uploaded?.public_id;
     }
 
     return this.usersRepository.save(existingUser);
@@ -269,6 +305,30 @@ export class UsersService {
 
     user.googleId = null;
     return this.usersRepository.save(user);
+  }
+
+  async toggleFollow(followerId: number, followingId: number) {
+    if (followerId === followingId) {
+      throw new HttpException('You cannot follow yourself', HttpStatus.BAD_REQUEST);
+    }
+
+    const targetUser = await this.usersRepository.findOne({ where: { id: followingId, isActive: true } });
+    if (!targetUser) {
+      throw new HttpException('User to follow not found', HttpStatus.NOT_FOUND);
+    }
+
+    const existingFollow = await this.userFollowRepository.findOne({
+      where: { followerId, followingId },
+    });
+
+    if (existingFollow) {
+      await this.userFollowRepository.remove(existingFollow);
+      return { followed: false };
+    } else {
+      const follow = this.userFollowRepository.create({ followerId, followingId });
+      await this.userFollowRepository.save(follow);
+      return { followed: true };
+    }
   }
 
   async remove(id: number) {

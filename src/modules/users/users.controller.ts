@@ -6,6 +6,7 @@ import { CreateUserDto } from './dtos/create-user.dto';
 import { QueryDto } from 'src/dtos/query.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from 'src/guards/optional-jwt-auth.guard';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
 import { Role } from 'src/constants/role.enum';
@@ -47,6 +48,27 @@ export class UsersController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.usersService.update(id, updateUserDto, file);
+  }
+
+  @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiOperation({ summary: 'Get public user profile' })
+  @ApiNotFoundResponse({ description: 'User not found' })
+  async findOne(@Param('id') id: number, @Req() request: any) {
+    const currentUserId = request['user']?.sub;
+    const user = await this.usersService.findById(id, currentUserId);
+    const { password: _p, publicId: _pid, ...publicInfo } = user;
+    return publicInfo;
+  }
+
+  @Post(':id/toggle-follow')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Toggle follow/unfollow a user' })
+  @ApiNotFoundResponse({ description: 'User not found' })
+  async toggleFollow(@Param('id') id: number, @Req() request: any) {
+    const currentUserId = request.user.sub;
+    return this.usersService.toggleFollow(currentUserId, id);
   }
 
   @Delete(':id')
