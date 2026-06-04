@@ -1,15 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional } from 'class-validator';
-
-export enum DashboardTimeRange {
-  SEVEN_DAYS = '7d',
-  THIRTY_DAYS = '30d',
-  QUARTER = 'quarter',
-}
+import { IsDateString, IsOptional } from 'class-validator';
 
 export class DashboardQueryDto {
   @IsOptional()
-  @IsEnum(DashboardTimeRange)
-  @ApiPropertyOptional({ enum: DashboardTimeRange, default: DashboardTimeRange.SEVEN_DAYS })
-  timeRange?: DashboardTimeRange;
+  @IsDateString()
+  @ApiPropertyOptional({ example: '2026-06-01' })
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  @ApiPropertyOptional({ example: '2026-06-07' })
+  endDate?: string;
 }
