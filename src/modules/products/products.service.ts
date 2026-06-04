@@ -334,12 +334,17 @@ export class ProductsService {
     await this.ensureActiveProduct(productId);
     await this.ensureVariantBelongsToProduct(productId, dto.variantId);
 
+    const deeparEffectUrl = dto.deeparEffectUrl?.trim();
+    if (!deeparEffectUrl) {
+      throw new HttpException('DeepAR effect file is required', HttpStatus.BAD_REQUEST);
+    }
+
     const asset = this.productTryonAssetsRepository.create({
       productId,
       variantId: dto.variantId ?? null,
       assetType: dto.assetType,
       displayName: dto.displayName.trim(),
-      deeparEffectUrl: dto.deeparEffectUrl.trim(),
+      deeparEffectUrl,
       thumbnailUrl: dto.thumbnailUrl?.trim() || null,
       isActive: dto.isActive ?? true,
     });
@@ -383,7 +388,11 @@ export class ProductsService {
     }
 
     if (dto.deeparEffectUrl !== undefined) {
-      asset.deeparEffectUrl = dto.deeparEffectUrl.trim();
+      const deeparEffectUrl = dto.deeparEffectUrl.trim();
+      if (!deeparEffectUrl) {
+        throw new HttpException('DeepAR effect URL can not be empty', HttpStatus.BAD_REQUEST);
+      }
+      asset.deeparEffectUrl = deeparEffectUrl;
     }
 
     if (dto.thumbnailUrl !== undefined) {

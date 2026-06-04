@@ -19,9 +19,11 @@ export class CreateProductTryonAssetDto {
   @ApiProperty({ example: 'Classic black glasses' })
   displayName: string;
 
+  @IsOptional()
   @IsUrl({ require_protocol: true }, { message: 'DeepAR effect URL must be a valid URL' })
-  @ApiProperty({ example: 'https://cdn.example.com/effects/glasses.deepar' })
-  deeparEffectUrl: string;
+  @StringOptional()
+  @ApiProperty({ required: false, example: 'https://cdn.example.com/effects/glasses.deepar' })
+  deeparEffectUrl?: string;
 
   @IsOptional()
   @IsUrl({ require_protocol: true }, { message: 'Thumbnail URL must be a valid URL' })

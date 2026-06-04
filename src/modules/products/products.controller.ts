@@ -147,22 +147,48 @@ export class ProductsController {
   }
 
   @Post(':id/tryon-assets')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'effectFile', maxCount: 1 },
+      { name: 'thumbnailFile', maxCount: 1 },
+    ]),
+  )
   @ApiOperation({ summary: 'Create a DeepAR try-on asset for a product' })
-  createTryonAsset(
+  async createTryonAsset(
     @Param('id', ParseIntPipe) id: number,
     @Body() createTryonAssetDto: CreateProductTryonAssetDto,
+    @UploadedFiles()
+    files?: {
+      effectFile?: Express.Multer.File[];
+      thumbnailFile?: Express.Multer.File[];
+    },
   ) {
-    return this.productsService.createTryonAsset(id, createTryonAssetDto);
+    const payload = await this.attachTryonAssetUploads(createTryonAssetDto, files);
+    return this.productsService.createTryonAsset(id, payload);
   }
 
   @Patch(':id/tryon-assets/:assetId')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'effectFile', maxCount: 1 },
+      { name: 'thumbnailFile', maxCount: 1 },
+    ]),
+  )
   @ApiOperation({ summary: 'Update a DeepAR try-on asset for a product' })
-  updateTryonAsset(
+  async updateTryonAsset(
     @Param('id', ParseIntPipe) id: number,
     @Param('assetId', ParseIntPipe) assetId: number,
     @Body() updateTryonAssetDto: UpdateProductTryonAssetDto,
+    @UploadedFiles()
+    files?: {
+      effectFile?: Express.Multer.File[];
+      thumbnailFile?: Express.Multer.File[];
+    },
   ) {
-    return this.productsService.updateTryonAsset(id, assetId, updateTryonAssetDto);
+    const payload = await this.attachTryonAssetUploads(updateTryonAssetDto, files);
+    return this.productsService.updateTryonAsset(id, assetId, payload);
   }
 
   @Delete(':id/tryon-assets/:assetId')
@@ -205,5 +231,73 @@ export class ProductsController {
       throw new BadRequestException('personImage file is required');
     }
     return this.productsService.virtualTryon2D(productId, personImage, garmentDesc);
+  }
+
+  private async attachTryonAssetUploads<T extends CreateProductTryonAssetDto | UpdateProductTryonAssetDto>(
+    dto: T,
+    files?: {
+      effectFile?: Express.Multer.File[];
+      thumbnailFile?: Express.Multer.File[];
+    },
+  ): Promise<T> {
+    const payload = { ...dto };
+    const effectFile = files?.effectFile?.[0];
+    const thumbnailFile = files?.thumbnailFile?.[0];
+
+    if (effectFile) {
+      this.assertDeepAREffectFile(effectFile);
+      const uploaded = await this.cloudinaryService.uploadFileToFolder(
+        effectFile,
+        'tryon/effects',
+        'raw',
+      );
+      if (!uploaded || !('secure_url' in uploaded) || !uploaded.secure_url) {
+        throw new BadRequestException('Failed to upload DeepAR effect file');
+      }
+      payload.deeparEffectUrl = uploaded.secure_url;
+    }
+
+    if (thumbnailFile) {
+      this.assertImageFile(thumbnailFile);
+      const uploaded = await this.cloudinaryService.uploadFileToFolder(
+        thumbnailFile,
+        'tryon/thumbnails',
+        'image',
+      );
+      if (!uploaded || !('secure_url' in uploaded) || !uploaded.secure_url) {
+        throw new BadRequestException('Failed to upload try-on thumbnail');
+      }
+      payload.thumbnailUrl = uploaded.secure_url;
+    }
+
+    return payload;
+  }
+
+  private assertDeepAREffectFile(file: Express.Multer.File) {
+    const maxSize = 25 * 1024 * 1024;
+    const fileName = file.originalname.toLowerCase();
+    const allowedMimeTypes = new Set([
+      'application/octet-stream',
+      'application/x-deepar',
+      'model/vnd.deepar',
+    ]);
+
+    if (file.size > maxSize) {
+      throw new BadRequestException('DeepAR effect file must not exceed 25MB');
+    }
+
+    if (!fileName.endsWith('.deepar') && !allowedMimeTypes.has(file.mimetype)) {
+      throw new BadRequestException('DeepAR effect file must be a .deepar file');
+    }
+  }
+
+  private assertImageFile(file: Express.Multer.File) {
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException('Thumbnail image must not exceed 5MB');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('Thumbnail file must be an image');
+    }
   }
 }
