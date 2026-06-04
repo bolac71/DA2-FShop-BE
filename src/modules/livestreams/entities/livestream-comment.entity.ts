@@ -31,11 +31,11 @@ export class LivestreamComment {
 
   @Column({
     type: 'enum',
-    enum: ['pending', 'approved', 'flagged'],
+    enum: ['pending', 'approved', 'flagged', 'rejected'],
     default: 'pending',
     name: 'moderation_status',
   })
-  moderationStatus: 'pending' | 'approved' | 'flagged';
+  moderationStatus: 'pending' | 'approved' | 'flagged' | 'rejected';
 
   @ManyToOne(() => Livestream, (livestream) => livestream.comments, {
     onDelete: 'CASCADE',

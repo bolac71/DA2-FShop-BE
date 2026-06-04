@@ -14,8 +14,8 @@ export class ModerationLog {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'enum', enum: ['review', 'post_comment', 'livestream_comment'], name: 'content_type' })
-  contentType: 'review' | 'post_comment' | 'livestream_comment';
+  @Column({ type: 'enum', enum: ['post', 'review', 'post_comment', 'livestream_comment'], name: 'content_type' })
+  contentType: 'post' | 'review' | 'post_comment' | 'livestream_comment';
 
   @Column({ type: 'int', name: 'content_id' })
   contentId: number;

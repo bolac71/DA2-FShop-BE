@@ -1,13 +1,17 @@
-import { IsEnum, IsInt, IsOptional, IsPositive, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsPositive, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ModerationQueueQueryDto {
   @IsOptional()
-  @IsEnum(['review', 'post_comment', 'livestream_comment'])
-  contentType?: 'review' | 'post_comment' | 'livestream_comment';
+  @IsIn(['pending', 'reviewed', 'approved', 'rejected'])
+  status?: 'pending' | 'reviewed' | 'approved' | 'rejected';
 
   @IsOptional()
-  @IsEnum(['NORMAL', 'HIGH'])
+  @IsIn(['post', 'review', 'post_comment', 'livestream_comment'])
+  contentType?: 'post' | 'review' | 'post_comment' | 'livestream_comment';
+
+  @IsOptional()
+  @IsIn(['NORMAL', 'HIGH'])
   priority?: 'NORMAL' | 'HIGH';
 
   @IsOptional()
@@ -24,8 +28,16 @@ export class ModerationQueueQueryDto {
 }
 
 export class OverrideDecisionDto {
-  @IsEnum(['approved', 'rejected'])
+  @IsIn(['approved', 'rejected'])
   decision: 'approved' | 'rejected';
+}
+
+export class ModerationRecentQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number = 6;
 }
 
 export interface ModerationV2ApiResponse {

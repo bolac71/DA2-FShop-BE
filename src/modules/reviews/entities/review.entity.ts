@@ -52,11 +52,11 @@ export class Review {
 
   @Column({
     type: 'enum',
-    enum: ['pending', 'approved', 'flagged'],
+    enum: ['pending', 'approved', 'flagged', 'rejected'],
     default: 'pending',
     name: 'moderation_status',
   })
-  moderationStatus: 'pending' | 'approved' | 'flagged';
+  moderationStatus: 'pending' | 'approved' | 'flagged' | 'rejected';
 
   @OneToMany(() => ReviewImage, (image) => image.review, { cascade: true })
   @Exclude()

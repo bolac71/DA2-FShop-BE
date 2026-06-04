@@ -57,11 +57,11 @@ export class PostComment {
 
   @Column({
     type: 'enum',
-    enum: ['pending', 'approved', 'flagged'],
+    enum: ['pending', 'approved', 'flagged', 'rejected'],
     default: 'pending',
     name: 'moderation_status',
   })
-  moderationStatus: 'pending' | 'approved' | 'flagged';
+  moderationStatus: 'pending' | 'approved' | 'flagged' | 'rejected';
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

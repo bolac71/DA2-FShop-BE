@@ -40,6 +40,14 @@ export class Post {
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 
+  @Column({
+    type: 'enum',
+    enum: ['pending', 'approved', 'flagged', 'rejected'],
+    default: 'pending',
+    name: 'moderation_status',
+  })
+  moderationStatus: 'pending' | 'approved' | 'flagged' | 'rejected';
+
   @OneToMany(() => PostImage, (image) => image.post, { cascade: true })
   images: PostImage[];
 

@@ -131,6 +131,12 @@ export class PostsService {
           );
         }
 
+        if (content) {
+          this.moderationService
+            .moderateContent(content, 'post', savedPost.id, userId)
+            .catch((err: Error) => this.logger.warn(`Post moderation failed: ${err.message}`));
+        }
+
         return plainToInstance(Post, savedPost);
       });
     } catch (error) {
@@ -215,6 +221,7 @@ export class PostsService {
         // Update content
         if (content) {
           post.content = content;
+          post.moderationStatus = 'pending';
         }
 
         // Update images
@@ -284,6 +291,11 @@ export class PostsService {
         }
 
         const updatedPost = await manager.save(post);
+        if (content) {
+          this.moderationService
+            .moderateContent(content, 'post', updatedPost.id, userId)
+            .catch((err: Error) => this.logger.warn(`Post moderation failed: ${err.message}`));
+        }
         return plainToInstance(Post, updatedPost);
       });
     } catch (error) {
@@ -364,6 +376,7 @@ export class PostsService {
       .leftJoinAndSelect('post.postHashtags', 'postHashtags')
       .leftJoinAndSelect('postHashtags.hashtag', 'hashtag')
       .where('post.isActive = :isActive', { isActive: true })
+      .andWhere('post.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
       .distinct(true);
 
     if (search?.trim()) {
@@ -568,7 +581,7 @@ export class PostsService {
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
 
     const [data, total] = await this.postCommentRepository.findAndCount({
-      where: { postId, isActive: true, parentComment: IsNull(), moderationStatus: Not('flagged') },
+      where: { postId, isActive: true, parentComment: IsNull(), moderationStatus: Not(In(['flagged', 'rejected'])) },
       relations: ['user'],
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },
@@ -600,9 +613,14 @@ export class PostsService {
       }
 
       comment.content = updateCommentDto.content;
-      await manager.save(comment);
+      comment.moderationStatus = 'pending';
+      const savedComment = await manager.save(comment);
 
-      return { message: 'Comment updated successfully', comment };
+      this.moderationService
+        .moderateContent(updateCommentDto.content, 'post_comment', savedComment.id, userId)
+        .catch((err: Error) => this.logger.warn(`Comment moderation failed: ${err.message}`));
+
+      return { message: 'Comment updated successfully', comment: savedComment };
     });
   }
 
@@ -753,7 +771,7 @@ export class PostsService {
 
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
     const [data, total] = await this.postCommentRepository.findAndCount({
-      where: { parentComment: { id: commentId }, content: search ? ILike(`%${search}%`) : undefined, isActive: true, moderationStatus: Not('flagged') },
+      where: { parentComment: { id: commentId }, content: search ? ILike(`%${search}%`) : undefined, isActive: true, moderationStatus: Not(In(['flagged', 'rejected'])) },
       relations: ['user'],
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },

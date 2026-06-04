@@ -234,7 +234,7 @@ export class ReviewsService {
       .leftJoinAndSelect('o.items', 'oi', 'oi.variant_id = r.variant_id')
       .where('v.product = :productId', { productId })
       .andWhere('r.isActive = :isActive', { isActive: true })
-      .andWhere('r.moderationStatus != :flagged', { flagged: 'flagged' })
+      .andWhere('r.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
       .orderBy('r.createdAt', 'DESC')
       .getMany();
 
@@ -326,7 +326,10 @@ export class ReviewsService {
       if (!review) throw new HttpException('Review not found', HttpStatus.NOT_FOUND)
 
       if (dto.rating !== undefined) review.rating = dto.rating;
-      if (dto.comment !== undefined) review.comment = dto.comment;
+      if (dto.comment !== undefined) {
+        review.comment = dto.comment;
+        review.moderationStatus = dto.comment.trim() ? 'pending' : 'approved';
+      }
       await manager.save(review);
 
       // xóa ảnh
@@ -361,6 +364,12 @@ export class ReviewsService {
       }
       await this.updateProductRating(manager, review.variant.productId)
       await this.redis.del(`review:summary:${review.variant.productId}`);
+
+      if (dto.comment?.trim()) {
+        this.moderationService
+          .moderateContent(dto.comment, 'review', review.id, userId)
+          .catch((err: Error) => this.logger.warn(`Review moderation failed: ${err.message}`));
+      }
 
       return {
         ...review,

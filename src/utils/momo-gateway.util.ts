@@ -47,8 +47,9 @@ export class MoMoGateway {
 
     console.log('[MoMo] Gateway initialized with:', {
       MOMO_API_URL: this.MOMO_API_URL,
-      PARTNER_CODE: this.PARTNER_CODE,
-      ACCESS_KEY: this.ACCESS_KEY.substring(0, 5) + '...',
+      hasPartnerCode: Boolean(this.PARTNER_CODE),
+      hasAccessKey: Boolean(this.ACCESS_KEY),
+      hasSecretKey: Boolean(this.SECRET_KEY),
     });
   }
 
@@ -59,10 +60,27 @@ export class MoMoGateway {
     return crypto.createHmac('sha256', secretKey).update(data).digest('hex');
   }
 
+  private validateConfig() {
+    const missingKeys = [
+      ['MOMO_API_URL', this.MOMO_API_URL],
+      ['MOMO_PARTNER_CODE', this.PARTNER_CODE],
+      ['MOMO_ACCESS_KEY', this.ACCESS_KEY],
+      ['MOMO_SECRET_KEY', this.SECRET_KEY],
+    ]
+      .filter(([, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingKeys.length > 0) {
+      throw new Error(`Missing MoMo configuration: ${missingKeys.join(', ')}`);
+    }
+  }
+
   /**
    * Initiate a MoMo payment request
    */
   async initiatePayment(params: InitiateMoMoPaymentParams): Promise<string> {
+    this.validateConfig();
+
     const { paymentId, amount, orderId, returnUrl, notifyUrl } = params;
 
     const requestId = `${Date.now()}`;

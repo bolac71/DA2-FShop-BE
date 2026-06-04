@@ -4,10 +4,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { ModerationLog } from './entities/moderation-log.entity';
 import { Review } from '../reviews/entities/review.entity';
+import { Post } from '../posts/entities/post.entity';
 import { PostComment } from '../posts/entities/post-comment.entity';
 import { LivestreamComment } from '../livestreams/entities/livestream-comment.entity';
 import type { ModerationV2ApiResponse } from './dtos/moderation.dto';
-import type { ModerationQueueQueryDto, OverrideDecisionDto } from './dtos/moderation.dto';
+import type { ModerationQueueQueryDto, ModerationRecentQueryDto, OverrideDecisionDto } from './dtos/moderation.dto';
+
+type ModeratedContentType = 'post' | 'review' | 'post_comment' | 'livestream_comment';
+type ContentModerationStatus = 'approved' | 'flagged' | 'rejected';
 
 @Injectable()
 export class ModerationService {
@@ -31,7 +35,7 @@ export class ModerationService {
 
   async moderateContent(
     text: string,
-    contentType: 'review' | 'post_comment' | 'livestream_comment',
+    contentType: ModeratedContentType,
     contentId: number,
     userId?: number,
   ): Promise<void> {
@@ -92,13 +96,15 @@ export class ModerationService {
   }
 
   private async updateContentStatus(
-    contentType: 'review' | 'post_comment' | 'livestream_comment',
+    contentType: ModeratedContentType,
     contentId: number,
-    decision: 'approved' | 'flagged',
+    decision: ContentModerationStatus,
   ): Promise<void> {
-    const status = decision === 'approved' ? 'approved' : 'flagged';
+    const status = decision;
     try {
-      if (contentType === 'review') {
+      if (contentType === 'post') {
+        await this.dataSource.getRepository(Post).update(contentId, { moderationStatus: status });
+      } else if (contentType === 'review') {
         await this.dataSource.getRepository(Review).update(contentId, { moderationStatus: status });
       } else if (contentType === 'post_comment') {
         await this.dataSource.getRepository(PostComment).update(contentId, { moderationStatus: status });
@@ -111,22 +117,53 @@ export class ModerationService {
   }
 
   async getModerationQueue(query: ModerationQueueQueryDto) {
-    const { contentType, priority, page = 1, limit = 20 } = query;
+    const { status = 'pending', contentType, priority, page = 1, limit = 20 } = query;
 
     const qb = this.logRepo
       .createQueryBuilder('log')
-      .where('log.decision = :decision', { decision: 'flagged' })
-      .andWhere('log.isOverridden = false')
-      .orderBy('log.priority', 'DESC')
-      .addOrderBy('log.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
+
+    if (status === 'pending') {
+      qb
+        .where('log.decision = :decision', { decision: 'flagged' })
+        .andWhere('log.isOverridden = false')
+        .orderBy('log.priority', 'DESC')
+        .addOrderBy('log.createdAt', 'DESC');
+    } else {
+      qb
+        .where('log.isOverridden = true')
+        .orderBy('log.reviewedAt', 'DESC')
+        .addOrderBy('log.createdAt', 'DESC');
+      if (status !== 'reviewed') {
+        qb.andWhere('log.overrideDecision = :status', { status });
+      }
+    }
 
     if (contentType) qb.andWhere('log.contentType = :contentType', { contentType });
     if (priority) qb.andWhere('log.priority = :priority', { priority });
 
     const [items, total] = await qb.getManyAndCount();
     return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async getRecentItems(query: ModerationRecentQueryDto) {
+    const limit = Math.min(query.limit ?? 6, 20);
+
+    const [flagged, rejected] = await Promise.all([
+      this.logRepo.find({
+        where: { decision: 'flagged', isOverridden: false },
+        order: { priority: 'DESC', createdAt: 'DESC' },
+        take: limit,
+      }),
+      this.logRepo.find({
+        where: { isOverridden: true, overrideDecision: 'rejected' },
+        order: { reviewedAt: 'DESC', createdAt: 'DESC' },
+        take: limit,
+      }),
+    ]);
+
+    return { flagged, rejected };
   }
 
   async overrideDecision(logId: number, dto: OverrideDecisionDto, adminId: number) {
@@ -139,17 +176,18 @@ export class ModerationService {
     await this.logRepo.save(log);
 
     // Sync status on the content entity based on admin's override
-    const newStatus = dto.decision === 'approved' ? 'approved' : 'flagged';
-    await this.updateContentStatus(log.contentType, log.contentId, newStatus === 'approved' ? 'approved' : 'flagged');
+    const newStatus = dto.decision === 'approved' ? 'approved' : 'rejected';
+    await this.updateContentStatus(log.contentType, log.contentId, newStatus);
 
     return log;
   }
 
   async getStats() {
-    const [totalFlagged, pendingReview, highPriority] = await Promise.all([
+    const [totalFlagged, pendingReview, highPriority, rejected] = await Promise.all([
       this.logRepo.count({ where: { decision: 'flagged' } }),
       this.logRepo.count({ where: { decision: 'flagged', isOverridden: false } }),
       this.logRepo.count({ where: { decision: 'flagged', isOverridden: false, priority: 'HIGH' } }),
+      this.logRepo.count({ where: { isOverridden: true, overrideDecision: 'rejected' } }),
     ]);
 
     const autoApproved = await this.logRepo.count({ where: { decision: 'approved' } });
@@ -175,6 +213,7 @@ export class ModerationService {
       totalFlagged,
       pendingReview,
       highPriority,
+      rejected,
       autoApproved,
       autoApprovedRate,
       labelDistribution: labelTotals,
