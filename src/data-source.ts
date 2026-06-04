@@ -49,6 +49,7 @@ import {
   Outfit,
   OutfitItem,
   SlotType,
+  SystemSetting,
 } from './entities';
 
 /**
@@ -114,6 +115,7 @@ export const AppDataSource = new DataSource({
     Outfit,
     OutfitItem,
     SlotType,
+    SystemSetting,
   ],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,

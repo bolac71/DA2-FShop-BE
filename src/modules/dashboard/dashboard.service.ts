@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DashboardQueryDto } from './dtos/dashboard-query.dto';
-import { Inventory, Order, OrderItem, Payment, Product, User, UserInteraction } from 'src/entities';
+import { Inventory, Order, OrderItem, Payment, Product, User, UserInteraction, SystemSetting } from 'src/entities';
 import { PaymentMethod } from 'src/constants/payment-method.enum';
 import { OrderStatus } from 'src/constants/order-status.enum';
 import { Repository } from 'typeorm';
@@ -91,6 +91,8 @@ export class DashboardService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(UserInteraction)
     private readonly userInteractionRepository: Repository<UserInteraction>,
+    @InjectRepository(SystemSetting)
+    private readonly settingsRepository: Repository<SystemSetting>,
   ) {}
 
   async getOverview(query: DashboardQueryDto) {
@@ -688,6 +690,15 @@ export class DashboardService {
       OrderStatus.AWAITING_PICKUP,
     ];
 
+    const highSetting = await this.settingsRepository.findOne({
+      where: { key: 'DASHBOARD_URGENT_HIGH_THRESHOLD' },
+    });
+    const mediumSetting = await this.settingsRepository.findOne({
+      where: { key: 'DASHBOARD_URGENT_MEDIUM_THRESHOLD' },
+    });
+    const highLimit = highSetting ? Number(highSetting.value) : 180;
+    const mediumLimit = mediumSetting ? Number(mediumSetting.value) : 60;
+
     const urgentOrders = orders
       .filter((order) => urgentStatuses.includes(order.status as OrderStatus))
       .map((order) => {
@@ -698,10 +709,10 @@ export class DashboardService {
         let priority: 'high' | 'medium' | 'low' = 'low';
         let note: string | undefined;
 
-        if (waitingMinutes > 180) {
+        if (waitingMinutes > highLimit) {
           priority = 'high';
           note = 'Quá hạn xử lý';
-        } else if (waitingMinutes > 60) {
+        } else if (waitingMinutes > mediumLimit) {
           priority = 'medium';
           note = 'Cần ưu tiên';
         }
