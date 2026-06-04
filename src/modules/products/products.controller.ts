@@ -26,11 +26,11 @@ import {
   CreateProductTryonAssetDto,
   ImageSearchDto,
   ImageSearchResultDto,
+  ProductQueryDto,
   UpdateProductTryonAssetDto,
   VoiceSearchResponseDto,
   VoiceTranscriptionResponseDto,
 } from './dtos';
-import { QueryDto } from 'src/dtos/query.dto';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 import { InteractionInterceptor } from '../user-interactions/interaction.interceptor';
@@ -92,7 +92,7 @@ export class ProductsController {
 
   @Get()
   @ApiOperation({ summary: 'Get all active products with pagination and search' })
-  findAll(@Query() query: QueryDto) {
+  findAll(@Query() query: ProductQueryDto) {
     return this.productsService.findAll(query);
   }
 

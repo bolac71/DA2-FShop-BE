@@ -1,13 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, ILike, In, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, ILike, In, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { ProductVariant } from './entities/product-variant.entity';
 import { ProductTryonAsset } from './entities/product-tryon-asset.entity';
-import { CreateProductDto, CreateProductTryonAssetDto, ImageSearchResultDto, UpdateProductTryonAssetDto, VoiceSearchResponseDto, VoiceTranscriptionResponseDto } from './dtos';
-import { QueryDto } from 'src/dtos/query.dto';
+import { CreateProductDto, CreateProductTryonAssetDto, ImageSearchResultDto, ProductQueryDto, UpdateProductTryonAssetDto, VoiceSearchResponseDto, VoiceTranscriptionResponseDto } from './dtos';
 import { BrandsService } from '../brands/brands.service';
 import { CategoriesService } from '../categories/categories.service';
 import { ColorsService } from '../colors/colors.service';
@@ -149,12 +148,16 @@ export class ProductsService {
     });
   }
 
-  async findAll(query: QueryDto) {
-    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
+  async findAll(query: ProductQueryDto) {
+    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC', department } = query;
+    const where: FindOptionsWhere<Product> = {
+      isActive: true,
+      ...(search ? { name: ILike(`%${search}%`) } : {}),
+      ...(department ? { category: { department } } : {}),
+    };
+
     const [data, total] = await this.productsRepository.findAndCount({
-      where: search
-        ? [{ isActive: true, name: ILike(`%${search}%`) }]
-        : { isActive: true },
+      where,
       relations: ['brand', 'category', 'images', 'variants'],
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },
