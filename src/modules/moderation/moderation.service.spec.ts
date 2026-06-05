@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
 import { PostComment } from '../posts/entities/post-comment.entity';
+import { MetricsService } from '../metrics/metrics.service';
 import { ModerationLog } from './entities/moderation-log.entity';
 import { ModerationService } from './moderation.service';
 
@@ -38,6 +39,7 @@ describe('ModerationService', () => {
   let service: ModerationService;
   let logRepo: jest.Mocked<Partial<Repository<ModerationLog>>>;
   let dataSource: { getRepository: jest.Mock };
+  let metricsService: jest.Mocked<Pick<MetricsService, 'recordModerationDecision'>>;
   let update: jest.Mock;
 
   beforeEach(() => {
@@ -50,6 +52,9 @@ describe('ModerationService', () => {
     dataSource = {
       getRepository: jest.fn(() => ({ update })),
     };
+    metricsService = {
+      recordModerationDecision: jest.fn(),
+    };
 
     service = new ModerationService(
       logRepo as Repository<ModerationLog>,
@@ -59,6 +64,7 @@ describe('ModerationService', () => {
         ),
       } as unknown as ConfigService,
       dataSource as unknown as DataSource,
+      metricsService as MetricsService,
     );
   });
 

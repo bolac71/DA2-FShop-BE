@@ -1,4 +1,4 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, BadRequestException } from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, BadRequestException, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ResponseDto } from 'src/dtos/response.dto';
 interface PipeRespone {
@@ -8,8 +8,9 @@ interface PipeRespone {
 }
 @Catch()
 export class AllExceptionFilter implements ExceptionFilter {
+    private readonly logger = new Logger(AllExceptionFilter.name);
+
     catch(exception: HttpException, host: ArgumentsHost) {
-        console.log(exception)
         const ctx = host.switchToHttp();
         const response = ctx.getResponse<Response>();
         const request = ctx.getRequest<Request>();
@@ -21,7 +22,13 @@ export class AllExceptionFilter implements ExceptionFilter {
             
         if (exception instanceof BadRequestException) 
             message = (exception.getResponse() as PipeRespone).message[0]
-        const a = []
+        this.logger.error({
+            requestId: request['requestId'],
+            method: request.method,
+            path: request.url,
+            statusCode: status,
+            message,
+        });
         response.status(status).json(new ResponseDto(status, message, takenTime, request));
     }
 }

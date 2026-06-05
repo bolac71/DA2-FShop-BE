@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { MiddlewareConsumer, Module, NestModule, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -14,6 +15,7 @@ import { TransformInterceptor } from './interceptors/transform.interceptor';
 import { StartTimingMiddleware } from './middlewares/start-timing.middleware';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { RedisModule } from '@nestjs-modules/ioredis';
+import { LoggerModule } from 'nestjs-pino';
 import { getRedisConfig } from './configs/redis.config';
 import { ColorsModule } from './modules/colors/colors.module';
 import { SizeTypesModule } from './modules/size-types/size-types.module';
@@ -42,13 +44,46 @@ import { UserInteractionsModule } from './modules/user-interactions/user-interac
 import { OutfitsModule } from './modules/outfits/outfits.module';
 import { SlotTypesModule } from './modules/slot-types/slot-types.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
 
+function formatRequestId(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  return '';
+}
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateEnv,
+    }),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        autoLogging: {
+          ignore: (req) => req.url === '/api/v1/metrics',
+        },
+        genReqId: (req) =>
+          req.headers['x-request-id']?.toString() ||
+          req.headers['x-correlation-id']?.toString() ||
+          randomUUID(),
+        customProps: (req) => ({
+          requestId: formatRequestId(req.id),
+        }),
+        customSuccessObject: (req, res) => ({
+          requestId: formatRequestId(req.id),
+          method: req.method,
+          path: req.url,
+          statusCode: res.statusCode,
+        }),
+        customErrorObject: (req, res, error) => ({
+          requestId: formatRequestId(req.id),
+          method: req.method,
+          path: req.url,
+          statusCode: res.statusCode,
+          error: error.message,
+        }),
+      },
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -89,6 +124,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     OutfitsModule,
     SlotTypesModule,
     SettingsModule,
+    MetricsModule,
   ],
 
   controllers: [AppController],

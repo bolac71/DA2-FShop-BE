@@ -41,6 +41,17 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: CI summary
+        if: always()
+        run: |
+          {
+            echo "## Backend CI"
+            echo ""
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Ref: \`${{ github.ref_name }}\`"
+            echo "- Lint/Test/Build job: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   e2e-smoke:
     name: E2E Smoke
     runs-on: ubuntu-latest
@@ -103,6 +114,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Docker and DORA summary
+        if: always()
+        run: |
+          {
+            echo "## Backend Delivery"
+            echo ""
+            echo "- Image: \`${{ steps.image.outputs.name }}:${{ github.sha }}\`"
+            echo "- Latest tag: \`${{ steps.image.outputs.name }}:latest\`"
+            echo "- Push image: \`${{ github.event_name != 'pull_request' }}\`"
+            echo "- VPS deploy enabled: \`${{ vars.ENABLE_VPS_DEPLOY == 'true' }}\`"
+            echo "- DORA-lite source: GitHub Actions workflow runs"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
@@ -143,3 +167,15 @@ jobs:
           done
           echo "Production healthcheck failed after deploy"
           exit 1
+
+      - name: Deploy summary
+        if: always()
+        run: |
+          {
+            echo "## Backend Deploy"
+            echo ""
+            echo "- Target: VPS Docker"
+            echo "- Image: \`${{ needs.docker.outputs.image }}:${{ github.sha }}\`"
+            echo "- Healthcheck URL: \`${{ secrets.PROD_BACKEND_URL }}\`"
+            echo "- Result: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: fshop-backend
+    metrics_path: /api/v1/metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:4000
+
+  - job_name: fshop-dora
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - dora-exporter:9101
+
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
