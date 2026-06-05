@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { getDatabaseConfig } from './configs/database.config';
+import { validateEnv } from './configs/env.validation';
 import { UsersModule } from './modules/users/users.module';
 import { BrandsModule } from './modules/brands/brands.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -46,6 +47,7 @@ import { SlotTypesModule } from './modules/slot-types/slot-types.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateEnv,
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
