@@ -4,6 +4,7 @@ import { seedBrands } from './brands.seeder';
 import { seedCategories } from './categories.seeder';
 import { seedColors } from './colors.seeder';
 import { seedSizes } from './sizes.seeder';
+import { seedSettings } from './settings.seeder';
 import { AppDataSource } from '../data-source';
 import { ProductVariant } from '../modules/products/entities/product-variant.entity';
 import { Product } from '../modules/products/entities/product.entity';
@@ -12,6 +13,7 @@ import { Category } from '../modules/categories/entities/category.entity';
 import { Color } from '../modules/colors/entities/color.entity';
 import { Size } from '../modules/sizes/entities/size.entity';
 import { User } from '../modules/users/entities/user.entity';
+import { SystemSetting } from '../modules/settings/entities/system-setting.entity';
 
 /**
  * Clear all data in reverse order of FK dependencies
@@ -25,9 +27,11 @@ async function clearAllData(dataSource: DataSource): Promise<void> {
     const categoryRepo = dataSource.getRepository(Category);
     const colorRepo = dataSource.getRepository(Color);
     const sizeRepo = dataSource.getRepository(Size);
+    const settingRepo = dataSource.getRepository(SystemSetting);
 
     console.log('🗑️  Clearing existing data...');
     
+    await settingRepo.createQueryBuilder().delete().execute();
     await userRepo.createQueryBuilder().delete().execute();
     await brandRepo.createQueryBuilder().delete().execute();
     await categoryRepo.createQueryBuilder().delete().execute();
@@ -63,6 +67,7 @@ async function runSeed() {
     await seedCategories(AppDataSource);
     await seedColors(AppDataSource);
     await seedSizes(AppDataSource);
+    await seedSettings(AppDataSource);
 
     console.log('✅ Database seeding completed successfully!');
     await AppDataSource.destroy();

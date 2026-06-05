@@ -41,6 +41,7 @@ import { RecommendationsModule } from './modules/recommendations/recommendations
 import { UserInteractionsModule } from './modules/user-interactions/user-interactions.module';
 import { OutfitsModule } from './modules/outfits/outfits.module';
 import { SlotTypesModule } from './modules/slot-types/slot-types.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 
 @Module({
@@ -87,6 +88,7 @@ import { SlotTypesModule } from './modules/slot-types/slot-types.module';
     UserInteractionsModule,
     OutfitsModule,
     SlotTypesModule,
+    SettingsModule,
   ],
 
   controllers: [AppController],

@@ -50,6 +50,7 @@ import {
   Outfit,
   OutfitItem,
   SlotType,
+  SystemSetting,
 } from './entities';
 
 /**
@@ -117,6 +118,7 @@ export const AppDataSource = new DataSource({
     Outfit,
     OutfitItem,
     SlotType,
+    SystemSetting,
   ],
   migrations: [join(__dirname, 'migrations', `*.${migrationExtension}`)],
   synchronize: false,
