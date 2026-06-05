@@ -1,12 +1,25 @@
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
+import { SKIP_TRANSFORM_KEY } from 'src/decorators/skip-transform.decorator';
 import { ResponseDto } from 'src/dtos/response.dto';
 
 @Injectable()
 export class TransformInterceptor<T> implements NestInterceptor<T, ResponseDto<T>> {
+    constructor(private readonly reflector: Reflector) {}
+
     intercept(context: ExecutionContext, next: CallHandler): Observable<ResponseDto<T>> {
+        const skipTransform = this.reflector.getAllAndOverride<boolean>(
+            SKIP_TRANSFORM_KEY,
+            [context.getHandler(), context.getClass()],
+        );
+
+        if (skipTransform) {
+            return next.handle();
+        }
+
         const ctx = context.switchToHttp();
         const response: Response = ctx.getResponse(); // response của Express
         const request: Request = ctx.getRequest();

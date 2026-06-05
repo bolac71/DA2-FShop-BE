@@ -3,9 +3,11 @@ import { AppModule } from './app.module';
 import { Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
+import { Logger as PinoLogger } from 'nestjs-pino';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useLogger(app.get(PinoLogger));
   const httpServer = app.getHttpServer() as { setTimeout: (timeout: number) => void; requestTimeout?: number; headersTimeout?: number; keepAliveTimeout?: number };
   httpServer.setTimeout(300000);
   httpServer.requestTimeout = 300000;

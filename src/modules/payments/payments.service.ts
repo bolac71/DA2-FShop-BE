@@ -7,6 +7,7 @@ import { Order } from 'src/modules/orders/entities/order.entity';
 import { PaymentStatus, PaymentMethod, OrderStatus } from 'src/constants';
 import { CreatePaymentRequestDto, PaymentResponseDto } from './dtos';
 import { MoMoGateway } from 'src/utils/momo-gateway.util';
+import { MetricsService } from '../metrics/metrics.service';
 
 @Injectable()
 export class PaymentsService {
@@ -24,6 +25,7 @@ export class PaymentsService {
     private readonly orderRepository: Repository<Order>,
     private readonly dataSource: DataSource,
     private readonly momoGateway: MoMoGateway,
+    private readonly metricsService: MetricsService,
   ) {}
 
   /**
@@ -74,6 +76,7 @@ export class PaymentsService {
       // Explicitly ensure userId is set
       payment.userId = userId;
       await this.paymentRepository.save(payment);
+      this.metricsService.recordPaymentInitiated(PaymentMethod.COD);
 
       return this.mapPaymentToResponseDto(payment, '');
     }
@@ -92,6 +95,7 @@ export class PaymentsService {
     // Explicitly ensure userId is set
     payment.userId = userId;
     await this.paymentRepository.save(payment);
+    this.metricsService.recordPaymentInitiated(dto.paymentMethod);
 
     let redirectUrl = '';
 

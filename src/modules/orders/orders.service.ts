@@ -60,6 +60,7 @@ import GoshipConfig from 'src/configs/goship.config';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Livestream, LivestreamOrder } from '../livestreams/entities';
 import { LivestreamStatus } from '../../constants/livestream-status.enum';
+import { MetricsService } from '../metrics/metrics.service';
 
 type GoshipRateOption = {
   id: string;
@@ -89,6 +90,7 @@ export class OrdersService {
     private notificationService: NotificationsService,
     private readonly interactionsService: UserInteractionsService,
     private readonly shipmentsService: ShipmentsService,
+    private readonly metricsService: MetricsService,
   ) {}
 
   private calculateShippingFee(shippingMethod: ShippingMethod): number {
@@ -508,6 +510,9 @@ export class OrdersService {
 
     this.logger.log(
       `Create order committed: order=${createdOrder.id}, user=${userId}, total=${createdOrder.totalAmount}`,
+    );
+    this.metricsService.recordOrderCreated(
+      createOrderDto.livestreamId ? 'livestream' : 'standard',
     );
 
     try {

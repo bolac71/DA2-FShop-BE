@@ -7,6 +7,7 @@ import { Review } from '../reviews/entities/review.entity';
 import { Post } from '../posts/entities/post.entity';
 import { PostComment } from '../posts/entities/post-comment.entity';
 import { LivestreamComment } from '../livestreams/entities/livestream-comment.entity';
+import { MetricsService } from '../metrics/metrics.service';
 import type { ModerationV2ApiResponse } from './dtos/moderation.dto';
 import type { ModerationQueueQueryDto, ModerationRecentQueryDto, OverrideDecisionDto } from './dtos/moderation.dto';
 
@@ -24,6 +25,7 @@ export class ModerationService {
     private readonly logRepo: Repository<ModerationLog>,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
+    private readonly metricsService: MetricsService,
   ) {
     const aiServerUrl = this.configService.get<string>('AI_SERVER_URL');
     if (!aiServerUrl) {
@@ -90,6 +92,11 @@ export class ModerationService {
     });
 
     await this.logRepo.save(log);
+    this.metricsService.recordModerationDecision(
+      contentType,
+      result.decision,
+      result.priority,
+    );
 
     // Update moderationStatus on the content entity
     await this.updateContentStatus(contentType, contentId, result.decision);

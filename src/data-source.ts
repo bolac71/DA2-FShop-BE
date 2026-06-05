@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
 import {
@@ -57,6 +58,8 @@ import {
  * Used for migration commands and database operations outside of NestJS app context
  */
 dotenv.config();
+
+const migrationExtension = __filename.endsWith('.ts') ? 'ts' : 'js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -117,7 +120,7 @@ export const AppDataSource = new DataSource({
     SlotType,
     SystemSetting,
   ],
-  migrations: ['src/migrations/*.ts'],
+  migrations: [join(__dirname, 'migrations', `*.${migrationExtension}`)],
   synchronize: false,
   // Enable ssl when using managed DBs (Neon, etc.)
 });
