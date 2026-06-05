@@ -199,6 +199,8 @@ export class InventoriesService {
   async getLowStockInventories(threshold: number = 10){
     return await this.inventoryRepository
       .createQueryBuilder('inventory')
+      .leftJoinAndSelect('inventory.variant', 'variant')
+      .leftJoinAndSelect('variant.product', 'product')
       .where('inventory.quantity <= :threshold', { threshold })
       .orderBy('inventory.quantity', 'ASC')
       .getMany();
