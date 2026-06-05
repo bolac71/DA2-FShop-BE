@@ -10,6 +10,8 @@ export async function seedSettings(dataSource: DataSource): Promise<void> {
     return;
   }
 
+
+
   const settings = [
     {
       key: 'DASHBOARD_URGENT_HIGH_THRESHOLD',
@@ -20,6 +22,11 @@ export async function seedSettings(dataSource: DataSource): Promise<void> {
       key: 'DASHBOARD_URGENT_MEDIUM_THRESHOLD',
       value: '60',
       description: 'Số phút tối thiểu để đơn hàng được coi là Cần ưu tiên (Medium priority - Màu cam)',
+    },
+    {
+      key: 'STOCK_LOW_THRESHOLD',
+      value: '10',
+      description: 'Ngưỡng cảnh báo tồn kho thấp (Low stock threshold)',
     },
   ];
 

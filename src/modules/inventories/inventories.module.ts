@@ -5,9 +5,13 @@ import { InventoriesController } from './inventories.controller';
 import { Inventory, InventoryTransaction } from './entities';
 import { ProductVariant } from '../products/entities/product-variant.entity';
 import { User } from 'src/entities';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Inventory, InventoryTransaction, ProductVariant, User])],
+  imports: [
+    TypeOrmModule.forFeature([Inventory, InventoryTransaction, ProductVariant, User]),
+    SettingsModule,
+  ],
   controllers: [InventoriesController],
   providers: [InventoriesService],
   exports: [InventoriesService],

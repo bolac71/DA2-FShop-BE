@@ -11,6 +11,31 @@ export class SettingsService {
   ) {}
 
   async findAll() {
+    const defaults = [
+      {
+        key: 'DASHBOARD_URGENT_HIGH_THRESHOLD',
+        value: '180',
+        description: 'Số phút tối thiểu để đơn hàng được coi là Khẩn cấp (High priority - Màu đỏ)',
+      },
+      {
+        key: 'DASHBOARD_URGENT_MEDIUM_THRESHOLD',
+        value: '60',
+        description: 'Số phút tối thiểu để đơn hàng được coi là Cần ưu tiên (Medium priority - Màu cam)',
+      },
+      {
+        key: 'STOCK_LOW_THRESHOLD',
+        value: '10',
+        description: 'Ngưỡng cảnh báo tồn kho thấp (Low stock threshold)',
+      },
+    ];
+
+    for (const def of defaults) {
+      const exists = await this.settingsRepository.findOne({ where: { key: def.key } });
+      if (!exists) {
+        await this.settingsRepository.save(this.settingsRepository.create(def));
+      }
+    }
+
     return this.settingsRepository.find();
   }
 
