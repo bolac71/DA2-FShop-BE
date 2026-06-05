@@ -11,6 +11,7 @@ import { hashPassword } from 'src/utils/hash';
 import { QueryDto } from 'src/dtos/query.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { CartsService } from '../carts/carts.service';
+import { Role } from 'src/constants/role.enum';
 
 
 type UpdateOwnProfileInput = {
@@ -103,14 +104,14 @@ export class UsersService {
   }
 
   async findAll(query: QueryDto) {
-    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
+    const { page, limit, search, sortBy = 'id', sortOrder = 'DESC', role } = query;
     const [data, total] = await this.usersRepository.findAndCount({
       where: search
         ? [
-            { isActive: true, fullName: ILike(`%${search}%`) },
-            { isActive: true, email: ILike(`%${search}%`) },
+            { isActive: true, fullName: ILike(`%${search}%`), ...(role && { role: role as Role }) },
+            { isActive: true, email: ILike(`%${search}%`), ...(role && { role: role as Role }) },
           ]
-        : { isActive: true },
+        : { isActive: true, ...(role && { role: role as Role }) },
       ...(page && limit && { take: limit, skip: (page - 1) * limit }),
       order: { [sortBy]: sortOrder },
     });
