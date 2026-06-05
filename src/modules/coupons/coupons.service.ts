@@ -327,38 +327,92 @@ export class CouponsService {
         throw new HttpException('Coupon not found', HttpStatus.NOT_FOUND);
       }
 
-      // 2. If updating code, check uniqueness (exclude current coupon)
+      // 2. Validate read-only fields
       if (updateCouponDto.code && updateCouponDto.code !== coupon.code) {
-        const existing = await manager.findOne(Coupon, {
-          where: { code: updateCouponDto.code },
-        });
-        if (existing) {
+        throw new HttpException(
+          'Cannot change coupon code after creation',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (updateCouponDto.type && updateCouponDto.type !== coupon.type) {
+        throw new HttpException(
+          'Cannot change coupon type after creation',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 3. Ràng buộc theo lượt sử dụng (usedCount > 0)
+      if (coupon.usedCount > 0) {
+        if (updateCouponDto.value !== undefined && Number(updateCouponDto.value) !== Number(coupon.value)) {
           throw new HttpException(
-            'Coupon code already exists',
+            'Cannot change discount value because this coupon has already been used',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        if (updateCouponDto.minOrderAmount !== undefined && Number(updateCouponDto.minOrderAmount) !== Number(coupon.minOrderAmount)) {
+          throw new HttpException(
+            'Cannot change minimum order amount because this coupon has already been used',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        if (updateCouponDto.maxDiscountAmount !== undefined && Number(updateCouponDto.maxDiscountAmount) !== Number(coupon.maxDiscountAmount)) {
+          throw new HttpException(
+            'Cannot change maximum discount amount because this coupon has already been used',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        if (updateCouponDto.applicableProduct !== undefined && Number(updateCouponDto.applicableProduct) !== Number(coupon.applicableProduct)) {
+          throw new HttpException(
+            'Cannot change applicable product because this coupon has already been used',
             HttpStatus.BAD_REQUEST,
           );
         }
       }
 
-      // 3. Validate dates if provided
+      // 4. Ràng buộc Số lượt dùng tối đa
+      if (updateCouponDto.maxUses !== undefined && updateCouponDto.maxUses < coupon.usedCount) {
+        throw new HttpException(
+          `maxUses cannot be less than the number of times this coupon has already been used (${coupon.usedCount})`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 5. Ràng buộc Ngày bắt đầu / kết thúc
       let startDate = coupon.startDate;
       let endDate = coupon.endDate;
+      const now = new Date();
 
-      if (updateCouponDto.startDate || updateCouponDto.endDate) {
-        if (updateCouponDto.startDate)
-          startDate = new Date(updateCouponDto.startDate);
-        if (updateCouponDto.endDate)
-          endDate = new Date(updateCouponDto.endDate);
-
-        if (startDate >= endDate) {
+      if (updateCouponDto.startDate) {
+        const newStartDate = new Date(updateCouponDto.startDate);
+        if (coupon.startDate <= now && newStartDate.getTime() !== coupon.startDate.getTime()) {
           throw new HttpException(
-            'startDate must be before endDate',
+            'Cannot change start date of an active coupon',
             HttpStatus.BAD_REQUEST,
           );
         }
+        startDate = newStartDate;
       }
 
-      // 4. Validate business logic
+      if (updateCouponDto.endDate) {
+        const newEndDate = new Date(updateCouponDto.endDate);
+        if (newEndDate <= now) {
+          throw new HttpException(
+            'endDate must be in the future',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        endDate = newEndDate;
+      }
+
+      if (startDate >= endDate) {
+        throw new HttpException(
+          'startDate must be before endDate',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 6. Validate business logic
       if (updateCouponDto.value !== undefined && updateCouponDto.value <= 0) {
         throw new HttpException(
           'Discount value must be greater than 0',
@@ -367,9 +421,11 @@ export class CouponsService {
       }
 
       // For PERCENT type validation
-      const type = updateCouponDto.type ?? coupon.type;
+      const type = coupon.type; // since type cannot change
       const maxDiscountAmount =
-        updateCouponDto.maxDiscountAmount ?? coupon.maxDiscountAmount;
+        updateCouponDto.maxDiscountAmount !== undefined
+          ? updateCouponDto.maxDiscountAmount
+          : coupon.maxDiscountAmount;
 
       if (type === CouponType.PERCENT && maxDiscountAmount <= 0) {
         throw new HttpException(
@@ -378,14 +434,14 @@ export class CouponsService {
         );
       }
 
-      // 5. Update coupon
+      // 7. Update coupon
       this.couponRepository.merge(coupon, {
         ...updateCouponDto,
         startDate,
         endDate,
       });
 
-      // 5. Lưu xuống DB
+      // 8. Lưu xuống DB
       return await this.couponRepository.save(coupon);
     });
   }
