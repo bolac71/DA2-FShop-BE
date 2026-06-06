@@ -30,7 +30,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
-import { CreatePaymentRequestDto, PaymentResponseDto } from './dtos';
+import { CreateAtmPaymentRequestDto, CreatePaymentRequestDto, PaymentResponseDto } from './dtos';
 
 @Controller('payments')
 @ApiTags('Payments')
@@ -108,6 +108,36 @@ export class PaymentsController {
       returnUrl,
       notifyUrl,
       ipAddress,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('atm/non-hosted')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Initiate non-hosted ATM payment',
+    description:
+      'Uses MoMo UAT non-hosted ATM flow: backend sends ATM test card info to MoMo and returns the bank authentication URL.',
+  })
+  async initiateAtmNonHostedPayment(
+    @Request() req,
+    @Body() dto: CreateAtmPaymentRequestDto,
+    @Query('returnUrl') returnUrl: string,
+    @Query('notifyUrl') notifyUrl: string,
+  ) {
+    if (!returnUrl) {
+      throw new HttpException('returnUrl query parameter is required', HttpStatus.BAD_REQUEST);
+    }
+    if (!notifyUrl) {
+      throw new HttpException('notifyUrl query parameter is required', HttpStatus.BAD_REQUEST);
+    }
+
+    const { sub } = req['user'];
+    return this.paymentsService.initiateAtmNonHostedPayment(
+      (sub as number),
+      dto,
+      returnUrl,
+      notifyUrl,
     );
   }
 

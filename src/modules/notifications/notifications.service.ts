@@ -325,6 +325,10 @@ export class NotificationsService {
       order: { updatedAt: 'DESC' },
     });
 
+    this.logger.log(
+      `Order push candidate: user=${userId}, notification=${notification.id}, activeTokens=${activeTokens.length}`,
+    );
+
     if (!activeTokens.length) {
       this.logger.log(`Skip push: no active device token for user=${userId}`);
       return;
@@ -354,6 +358,10 @@ export class NotificationsService {
       }));
 
       try {
+        this.logger.log(
+          `Expo push send start: user=${userId}, notification=${notification.id}, batch=${start}, size=${messageBatch.length}`,
+        );
+
         const response = await fetch(NotificationsService.EXPO_PUSH_URL, {
           method: 'POST',
           headers,
@@ -377,6 +385,20 @@ export class NotificationsService {
         }
 
         const tickets = parsed?.data ?? [];
+        const okCount = tickets.filter((ticket) => ticket.status === 'ok').length;
+        const errorTickets = tickets.filter((ticket) => ticket.status === 'error');
+        this.logger.log(
+          `Expo push tickets: user=${userId}, notification=${notification.id}, ok=${okCount}, errors=${errorTickets.length}`,
+        );
+
+        if (errorTickets.length) {
+          this.logger.warn(
+            `Expo push ticket errors: user=${userId}, notification=${notification.id}, errors=${JSON.stringify(
+              errorTickets.map((ticket) => ticket.details?.error ?? 'unknown'),
+            )}`,
+          );
+        }
+
         const invalidTokens: string[] = [];
 
         tickets.forEach((ticket, index) => {
