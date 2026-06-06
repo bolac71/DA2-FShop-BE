@@ -11,6 +11,9 @@ import { LoginDto, GoogleLoginDto } from './dtos';
 import { ChangePasswordDto } from './dtos/change-password.dto';
 import { UpdateMeDto } from './dtos/update-me.dto';
 import { GoogleOAuthUtil, GoogleProfile } from 'src/utils/google-oauth.util';
+import { MailService } from './mail.service';
+import { ForgotPasswordRequestDto, ForgotPasswordVerifyDto, ForgotPasswordResetDto } from './dtos';
+
 
 @Injectable()
 export class AuthService {
@@ -20,7 +23,9 @@ export class AuthService {
     @InjectRedis() private readonly redis: Redis,
     private readonly configService: ConfigService,
     private readonly googleOAuthUtil: GoogleOAuthUtil,
+    private readonly mailService: MailService,
   ) {}
+
 
   private generateAccessToken(userId: number, email: string, role: Role, cartId?: number): string {
     return this.jwtService.sign({ sub: userId, email, role, ...(cartId && { cartId }) });
@@ -250,4 +255,75 @@ export class AuthService {
     const { password: _password, publicId: _publicId, ...userInfo } = updatedUser;
     return userInfo;
   }
+
+  async forgotPasswordRequest(dto: ForgotPasswordRequestDto) {
+    const user = await this.usersService.findByEmail(dto.email).catch(() => null);
+    if (!user) {
+      throw new HttpException('Email không tồn tại trong hệ thống', HttpStatus.NOT_FOUND);
+    }
+    if (!user.isActive) {
+      throw new HttpException('Tài khoản đã bị khóa', HttpStatus.FORBIDDEN);
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    await this.redis.set(`forgot-password:otp:${dto.email}`, code, 'EX', 300);
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #40BFFF; text-align: center;">Mã Xác Thực Quên Mật Khẩu</h2>
+        <p>Chào bạn,</p>
+        <p>Chúng tôi nhận được yêu cầu khôi phục mật khẩu từ tài khoản của bạn. Vui lòng sử dụng mã xác thực dưới đây để tiếp tục quá trình đặt lại mật khẩu:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #1a202c; background-color: #f7fafc; padding: 10px 20px; border: 1px dashed #40BFFF; border-radius: 4px;">
+            ${code}
+          </span>
+        </div>
+        <p style="color: #718096; font-size: 14px;">Mã xác thực có hiệu lực trong vòng 5 phút. Vui lòng không chia sẻ mã này với bất kỳ ai.</p>
+        <hr style="border: 0; border-top: 1px solid #edf2f7; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #a0aec0; text-align: center;">Đây là email tự động từ hệ thống FShop. Vui lòng không trả lời email này.</p>
+      </div>
+    `;
+
+    await this.mailService.sendMail({
+      to: dto.email,
+      subject: '[FShop] Mã xác thực khôi phục mật khẩu',
+      html: htmlContent,
+    });
+
+    return { message: 'Mã xác thực đã được gửi đến email của bạn.' };
+  }
+
+  async forgotPasswordVerify(dto: ForgotPasswordVerifyDto) {
+    const storedCode = await this.redis.get(`forgot-password:otp:${dto.email}`);
+    if (!storedCode || storedCode !== dto.code) {
+      throw new HttpException('Mã xác thực không đúng hoặc đã hết hạn', HttpStatus.BAD_REQUEST);
+    }
+    return { message: 'Mã xác thực hợp lệ.' };
+  }
+
+  async forgotPasswordReset(dto: ForgotPasswordResetDto) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new HttpException('Mật khẩu mới và xác nhận mật khẩu không trùng khớp', HttpStatus.BAD_REQUEST);
+    }
+
+    const storedCode = await this.redis.get(`forgot-password:otp:${dto.email}`);
+    if (!storedCode || storedCode !== dto.code) {
+      throw new HttpException('Mã xác thực không đúng hoặc đã hết hạn', HttpStatus.BAD_REQUEST);
+    }
+
+    const user = await this.usersService.findByEmail(dto.email).catch(() => null);
+    if (!user) {
+      throw new HttpException('Người dùng không tồn tại', HttpStatus.NOT_FOUND);
+    }
+
+    const hashed = await hashPassword(dto.newPassword);
+    await this.usersService.updatePassword(user.id, hashed);
+
+    await this.redis.del(`forgot-password:otp:${dto.email}`);
+    await this.redis.del(`refresh_token:${user.id}`);
+
+    return { message: 'Đặt lại mật khẩu thành công.' };
+  }
 }
+
