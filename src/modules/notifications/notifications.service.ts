@@ -183,11 +183,13 @@ export class NotificationsService {
     return response;
   }
 
-  async markOneAsRead(notificationId: number, userId: number) {
+  async markOneAsRead(notificationId: number, userId: number, role?: string) {
+    const isUserAdmin = role === 'admin';
+
     const notification = await this.notificationRepository.findOne({
       where: {
         id: notificationId,
-        user: { id: userId },
+        ...(!isUserAdmin && { user: { id: userId } }),
       },
     });
 
@@ -199,7 +201,16 @@ export class NotificationsService {
     return this.notificationRepository.save(notification);
   }
 
-  async markAsRead(userId: number) {
+  async markAsRead(userId: number, role?: string) {
+    const isUserAdmin = role === 'admin';
+
+    if (isUserAdmin) {
+      return this.notificationRepository.update(
+        { isRead: false },
+        { isRead: true },
+      );
+    }
+
     if (!(await this.userRepository.findOneBy({ id: userId })))
       throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
     return this.notificationRepository.update(

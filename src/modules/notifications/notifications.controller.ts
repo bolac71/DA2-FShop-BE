@@ -53,16 +53,16 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Mark one notification as read' })
   @Patch(':id/read')
   markOneAsRead(@Req() req: Request, @Param('id') id: number) {
-    const { sub } = req['user'];
-    return this.notificationsService.markOneAsRead(id, sub);
+    const { sub, role } = req['user'];
+    return this.notificationsService.markOneAsRead(id, sub, role);
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Mark all my notifications as read' })
   @Patch('/read-all')
   markAsRead(@Req() req: Request) {
-    const { sub } = req['user'];
-    return this.notificationsService.markAsRead(sub);
+    const { sub, role } = req['user'];
+    return this.notificationsService.markAsRead(sub, role);
   }
 
   @UseGuards(JwtAuthGuard)
