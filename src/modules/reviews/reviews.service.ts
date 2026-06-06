@@ -132,6 +132,7 @@ export class ReviewsService {
       .addSelect('COUNT(r.id)', 'count')
       .where('v.product = :productId', { productId })
       .andWhere('r.isActive = :isActive', { isActive: true })
+      .andWhere('r.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
       .getRawOne();
 
     await manager.update(Product, productId, {
@@ -294,6 +295,7 @@ export class ReviewsService {
         .addSelect('COUNT(r.id)', 'count')
         .where('v.product = :productId', { productId })
         .andWhere('r.isActive = :isActive', { isActive: true })
+        .andWhere('r.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
         .groupBy('ROUND(r.rating)')
         .getRawMany();
 
