@@ -145,19 +145,30 @@ export class AiChatbotService {
     };
   }
 
-  async imageSearch(userId: number, sessionId: number, fileBuffer: Buffer, fileName: string) {
+  async imageSearch(userId: number, sessionId: number, fileBuffer: Buffer, fileName: string, clientImageUri?: string) {
     const session = await this.getOwnedSession(userId, sessionId);
 
     const rawResults = await this.aiService.searchByImage(fileBuffer, fileName, 8);
     const products = await this.enrichProducts(rawResults);
 
     const userMessage = await this.messageRepo.save(
-      this.messageRepo.create({ session, role: 'user', content: '[Tìm kiếm sản phẩm bằng hình ảnh]', products: null, latencyMs: null }),
+      this.messageRepo.create({
+        session,
+        role: 'user',
+        content: '[Tìm kiếm sản phẩm bằng hình ảnh]',
+        products: null,
+        metadata: {
+          mediaType: 'image',
+          imageUri: clientImageUri,
+          fileName,
+        },
+        latencyMs: null,
+      }),
     );
 
     const assistantContent = products.length > 0
       ? 'Dưới đây là các sản phẩm tương tự với hình ảnh bạn tìm kiếm:'
-      : 'Tôi không tìm thấy sản phẩm nào tương tự. Bạn thử mô tả sản phẩm bằng văn bản nhé!';
+      : 'Tôi không tìm thấy sản phẩm nào đủ tương tự. Bạn thử gửi ảnh rõ hơn hoặc mô tả sản phẩm bằng văn bản nhé!';
 
     const assistantMessage = await this.messageRepo.save(
       this.messageRepo.create({ session, role: 'assistant', content: assistantContent, products, latencyMs: null }),
