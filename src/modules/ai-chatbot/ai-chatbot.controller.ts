@@ -85,11 +85,12 @@ export class AiChatbotController {
   imageSearch(
     @Req() req: AuthenticatedRequest,
     @Param('sessionId', ParseIntPipe) sessionId: number,
+    @Body() body: { clientImageUri?: string },
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('Image file is required');
     const userId = req.user.sub;
-    return this.aiChatbotService.imageSearch(userId, sessionId, file.buffer, file.originalname);
+    return this.aiChatbotService.imageSearch(userId, sessionId, file.buffer, file.originalname, body?.clientImageUri);
   }
 
   @Post('sessions/:sessionId/voice-search')

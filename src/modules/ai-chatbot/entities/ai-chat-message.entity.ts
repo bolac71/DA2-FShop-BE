@@ -28,6 +28,9 @@ export class AiChatMessage {
   @Column({ type: 'jsonb', nullable: true })
   products!: unknown[] | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  metadata!: Record<string, unknown> | null;
+
   @Column({ name: 'latency_ms', type: 'integer', nullable: true })
   latencyMs!: number | null;
 
