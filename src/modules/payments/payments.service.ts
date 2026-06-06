@@ -5,7 +5,7 @@ import { Repository, DataSource } from 'typeorm';
 import { Payment, PaymentRetry } from './entities';
 import { Order } from 'src/modules/orders/entities/order.entity';
 import { PaymentStatus, PaymentMethod, OrderStatus } from 'src/constants';
-import { CreatePaymentRequestDto, PaymentResponseDto } from './dtos';
+import { CreateAtmPaymentRequestDto, CreatePaymentRequestDto, PaymentResponseDto } from './dtos';
 import { MoMoGateway } from 'src/utils/momo-gateway.util';
 import { MetricsService } from '../metrics/metrics.service';
 
@@ -120,6 +120,73 @@ export class PaymentsService {
 
     const response = this.mapPaymentToResponseDto(payment, redirectUrl);
     return response;
+  }
+
+  async initiateAtmNonHostedPayment(
+    userId: number,
+    dto: CreateAtmPaymentRequestDto,
+    returnUrl: string,
+    notifyUrl: string,
+  ): Promise<PaymentResponseDto> {
+    const order = await this.orderRepository.findOne({
+      where: { id: dto.orderId, user: { id: userId } },
+    });
+
+    if (!order) {
+      throw new HttpException(`Order not found or unauthorized`, HttpStatus.NOT_FOUND);
+    }
+
+    if (order.status !== OrderStatus.PENDING) {
+      throw new HttpException(`Order must be in PENDING status to initiate payment`, HttpStatus.BAD_REQUEST);
+    }
+
+    const existingPayment = await this.paymentRepository.findOne({
+      where: { orderId: dto.orderId, status: PaymentStatus.PENDING },
+    });
+
+    if (existingPayment) {
+      throw new HttpException(`There is already a pending payment for this order`, HttpStatus.CONFLICT);
+    }
+
+    const payment = this.paymentRepository.create({
+      orderId: dto.orderId,
+      userId,
+      method: PaymentMethod.MOMO,
+      amount: order.totalAmount,
+      status: PaymentStatus.PENDING,
+      requestId: `${Date.now()}`,
+    });
+    payment.userId = userId;
+    await this.paymentRepository.save(payment);
+    this.metricsService.recordPaymentInitiated(PaymentMethod.MOMO);
+
+    try {
+      const initiateResult = await this.momoGateway.initiateAtmTransaction({
+        paymentId: payment.id,
+        amount: order.totalAmount,
+        orderId: order.id,
+        returnUrl,
+        notifyUrl,
+        partnerClientId: `user_${userId}`,
+      });
+
+      payment.requestId = initiateResult.requestId;
+      await this.paymentRepository.save(payment);
+
+      const redirectUrl = await this.momoGateway.processAtmPayment({
+        mToken: initiateResult.mToken,
+        amount: order.totalAmount,
+        orderId: initiateResult.momoOrderId,
+        requestId: initiateResult.requestId,
+        cardInfo: dto.cardInfo,
+      });
+
+      return this.mapPaymentToResponseDto(payment, redirectUrl);
+    } catch (error: any) {
+      payment.status = PaymentStatus.FAILED;
+      await this.paymentRepository.save(payment);
+      throw new HttpException(`Failed to initialize ATM payment: ${error.message}`, HttpStatus.BAD_REQUEST);
+    }
   }
 
   /**

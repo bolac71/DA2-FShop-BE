@@ -12,6 +12,24 @@ interface InitiateMoMoPaymentParams {
   notifyUrl: string;
 }
 
+interface AtmCardInfo {
+  cardNumber: string;
+  cardFullName: string;
+  cardIssueDate: string;
+}
+
+interface InitiateAtmTransactionParams extends InitiateMoMoPaymentParams {
+  partnerClientId: string;
+}
+
+interface ProcessAtmPaymentParams {
+  mToken: string;
+  amount: number;
+  orderId: string;
+  requestId: string;
+  cardInfo: AtmCardInfo;
+}
+
 interface MoMoWebhookData {
   partnerCode: string;
   orderId: string;
@@ -38,15 +56,24 @@ export class MoMoGateway {
   private readonly PARTNER_CODE: string;
   private readonly ACCESS_KEY: string;
   private readonly SECRET_KEY: string;
+  private readonly REQUEST_TYPE: string;
+  private readonly PARTNER_NAME: string;
+  private readonly STORE_ID: string;
+  private readonly TEST_EMAIL: string;
 
   constructor(private configService: ConfigService) {
     this.MOMO_API_URL = this.configService.get<string>('MOMO_API_URL') || '';
     this.PARTNER_CODE = this.configService.get<string>('MOMO_PARTNER_CODE') || '';
     this.ACCESS_KEY = this.configService.get<string>('MOMO_ACCESS_KEY') || '';
     this.SECRET_KEY = this.configService.get<string>('MOMO_SECRET_KEY') || '';
+    this.REQUEST_TYPE = this.configService.get<string>('MOMO_REQUEST_TYPE') || 'payWithCC';
+    this.PARTNER_NAME = this.configService.get<string>('MOMO_PARTNER_NAME') || 'Test';
+    this.STORE_ID = this.configService.get<string>('MOMO_STORE_ID') || 'MoMoTestStore';
+    this.TEST_EMAIL = this.configService.get<string>('MOMO_TEST_EMAIL') || 'test@example.com';
 
     console.log('[MoMo] Gateway initialized with:', {
       MOMO_API_URL: this.MOMO_API_URL,
+      REQUEST_TYPE: this.REQUEST_TYPE,
       hasPartnerCode: Boolean(this.PARTNER_CODE),
       hasAccessKey: Boolean(this.ACCESS_KEY),
       hasSecretKey: Boolean(this.SECRET_KEY),
@@ -92,14 +119,14 @@ export class MoMoGateway {
     const momoOrderId = `${paymentId}_${requestId}`;
 
     // Create raw signature data
-    const rawSignature = `accessKey=${this.ACCESS_KEY}&amount=${amountInt}&extraData=&ipnUrl=${notifyUrl}&orderId=${momoOrderId}&orderInfo=${orderInfo}&partnerCode=${this.PARTNER_CODE}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=captureWallet`;
+    const rawSignature = `accessKey=${this.ACCESS_KEY}&amount=${amountInt}&extraData=&ipnUrl=${notifyUrl}&orderId=${momoOrderId}&orderInfo=${orderInfo}&partnerCode=${this.PARTNER_CODE}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${this.REQUEST_TYPE}`;
 
     const signature = this.generateSignature(rawSignature, this.SECRET_KEY);
 
-    const requestPayload = {
+    const requestPayload: Record<string, unknown> = {
       partnerCode: this.PARTNER_CODE,
-      partnerName: 'FShop',
-      accessKey: this.ACCESS_KEY,
+      partnerName: this.PARTNER_NAME,
+      storeId: this.STORE_ID,
       requestId,
       amount: amountInt,
       orderId: momoOrderId,
@@ -107,15 +134,23 @@ export class MoMoGateway {
       redirectUrl: returnUrl,
       ipnUrl: notifyUrl,
       extraData: '',
-      requestType: 'captureWallet',
+      requestType: this.REQUEST_TYPE,
       signature,
       lang: 'vi',
     };
+
+    if (this.REQUEST_TYPE === 'payWithCC') {
+      requestPayload.userInfo = {
+        email: this.TEST_EMAIL,
+      };
+      requestPayload.autoCapture = true;
+    }
 
     try {
       console.log('[MoMo] Initiating payment with config:', {
         MOMO_API_URL: this.MOMO_API_URL,
         PARTNER_CODE: this.PARTNER_CODE,
+        requestType: this.REQUEST_TYPE,
         amount,
         orderId: paymentId,
       });
@@ -144,7 +179,15 @@ export class MoMoGateway {
 
       const data = await response.json();
 
-      console.log('[MoMo] Response data:', data);
+      console.log('[MoMo] Response data:', {
+        resultCode: data.resultCode,
+        message: data.message,
+        requestId: data.requestId,
+        orderId: data.orderId,
+        payUrlHost: data.payUrl ? new URL(data.payUrl).host : null,
+        payUrlPath: data.payUrl ? new URL(data.payUrl).pathname : null,
+        hasDeeplink: Boolean(data.deeplink),
+      });
 
       if (data.resultCode === 0) {
         // Return the payment link for user to complete payment
@@ -157,6 +200,101 @@ export class MoMoGateway {
       const msg = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to initiate MoMo payment: ${msg}`);
     }
+  }
+
+  async initiateAtmTransaction(params: InitiateAtmTransactionParams): Promise<{
+    mToken: string;
+    momoOrderId: string;
+    requestId: string;
+  }> {
+    this.validateConfig();
+
+    const { paymentId, amount, orderId, returnUrl, notifyUrl, partnerClientId } = params;
+    const requestId = `${Date.now()}`;
+    const orderInfo = `pay with MoMo ATM`;
+    const amountInt = Math.round(Number(amount));
+    const momoOrderId = `${paymentId}_${requestId}`;
+    const requestType = 'initiate';
+    const extraData = '';
+
+    const rawSignature =
+      `accessKey=${this.ACCESS_KEY}&amount=${amountInt}&extraData=${extraData}` +
+      `&ipnUrl=${notifyUrl}&orderId=${momoOrderId}&orderInfo=${orderInfo}` +
+      `&partnerClientId=${partnerClientId}&partnerCode=${this.PARTNER_CODE}` +
+      `&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
+    const signature = this.generateSignature(rawSignature, this.SECRET_KEY);
+
+    const requestPayload = {
+      partnerCode: this.PARTNER_CODE,
+      partnerName: this.PARTNER_NAME,
+      storeId: this.STORE_ID,
+      requestType,
+      partnerClientId,
+      ipnUrl: notifyUrl,
+      redirectUrl: returnUrl,
+      orderId: momoOrderId,
+      amount: amountInt,
+      lang: 'vi',
+      orderInfo,
+      requestId,
+      extraData,
+      signature,
+    };
+
+    const response = await fetch(this.MOMO_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestPayload),
+    });
+
+    const data = await response.json();
+    console.log('[MoMo ATM] Initiate response:', {
+      resultCode: data.resultCode,
+      message: data.message,
+      hasMToken: Boolean(data.mToken),
+    });
+
+    if (data.resultCode !== 0 || !data.mToken) {
+      throw new Error(`MoMo ATM initiate error: ${data.message || 'missing mToken'}`);
+    }
+
+    return { mToken: data.mToken, momoOrderId, requestId };
+  }
+
+  async processAtmPayment(params: ProcessAtmPaymentParams): Promise<string> {
+    const { mToken, amount, orderId, requestId, cardInfo } = params;
+    const amountInt = Math.round(Number(amount));
+
+    const response = await fetch(this.MOMO_API_URL.replace('/create', '/pay'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        mToken,
+        partnerCode: this.PARTNER_CODE,
+        orderId,
+        requestId,
+      },
+      body: JSON.stringify({
+        cardInfo,
+        amount: amountInt,
+        requestType: 'payWithATM',
+        generateCardToken: false,
+        lang: 'vi',
+      }),
+    });
+
+    const data = await response.json();
+    console.log('[MoMo ATM] Pay response:', {
+      resultCode: data.resultCode,
+      message: data.message,
+      hasPayUrl: Boolean(data.payUrl),
+    });
+
+    if (data.resultCode !== 0 || !data.payUrl) {
+      throw new Error(`MoMo ATM pay error: ${data.message || 'missing payUrl'}`);
+    }
+
+    return data.payUrl;
   }
 
   /**

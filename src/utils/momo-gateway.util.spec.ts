@@ -7,6 +7,9 @@ const configValues = {
   MOMO_PARTNER_CODE: 'MOMO_PARTNER',
   MOMO_ACCESS_KEY: 'ACCESS_KEY',
   MOMO_SECRET_KEY: 'SECRET_KEY',
+  MOMO_REQUEST_TYPE: 'payWithATM',
+  MOMO_PARTNER_NAME: 'Test',
+  MOMO_STORE_ID: 'MoMoTestStore',
 };
 
 function createConfig(overrides: Record<string, string> = {}) {
@@ -88,14 +91,15 @@ describe('MoMoGateway', () => {
 
     expect(payload).toMatchObject({
       partnerCode: configValues.MOMO_PARTNER_CODE,
-      accessKey: configValues.MOMO_ACCESS_KEY,
+      partnerName: configValues.MOMO_PARTNER_NAME,
+      storeId: configValues.MOMO_STORE_ID,
       amount: 120000,
       orderId: '10_1780617600000',
       orderInfo: 'FShop Payment for Order #99',
       redirectUrl: 'https://shop.test/payment/return',
       ipnUrl: 'https://api.test/api/v1/payments/webhook/momo',
       requestId: '1780617600000',
-      requestType: 'captureWallet',
+      requestType: 'payWithATM',
       lang: 'vi',
     });
     expect(payload.signature).toEqual(expect.any(String));
