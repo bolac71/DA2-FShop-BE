@@ -1,4 +1,4 @@
-import { NumberRequired } from "src/decorators/dto.decorator";
+import { NumberRequired, NumberOptional } from "src/decorators/dto.decorator";
 
 export class CreateOrderItemDto {
   @NumberRequired('Variant ID')
@@ -6,4 +6,7 @@ export class CreateOrderItemDto {
 
   @NumberRequired('quantity')
   quantity: number
+
+  @NumberOptional()
+  livestreamId?: number;
 }

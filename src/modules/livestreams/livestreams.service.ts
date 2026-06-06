@@ -172,7 +172,7 @@ export class LivestreamsService {
   }
 
   async end(livestreamId: number, hostId: number) {
-    const livestream = await this.ensureHostAccess(livestreamId, hostId);
+    const livestream = await this.ensureLivestreamExists(livestreamId);
 
     if (livestream.status === LivestreamStatus.ENDED) {
       return livestream;

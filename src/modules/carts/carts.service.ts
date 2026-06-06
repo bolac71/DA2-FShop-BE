@@ -45,7 +45,10 @@ export class CartsService {
     if (!variant) throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
     if (quantity > inventory.quantity) throw new HttpException('Not enough quantity', HttpStatus.BAD_REQUEST);
 
-    const existingCartItem = cart.items.find(item => item.variant.id === variantId);
+    const existingCartItem = cart.items.find(item => 
+      item.variant.id === variantId && 
+      item.livestreamId === (cartItemDto.livestreamId || null)
+    );
     if (existingCartItem) {
       existingCartItem.quantity += quantity;
       await this.cartItemRepository.save(existingCartItem);
@@ -55,6 +58,7 @@ export class CartsService {
         quantity,
         cart,
         variant,
+        livestreamId: cartItemDto.livestreamId || null,
       })
       await this.cartItemRepository.save(cartItem);
     }
@@ -77,7 +81,10 @@ console.log(`Recording add_to_cart interaction for user ${cart.user.id} and prod
     const cart = await this.cartRepository.findOne({ where: { id: cartId }, relations: ['items', 'items.variant'] });
 
     if (!cart) throw new HttpException('Cart not found', HttpStatus.NOT_FOUND);
-    const existingCartItem = cart.items.find(item => item.variant.id === variantId);
+    const existingCartItem = cart.items.find(item => 
+      item.variant.id === variantId && 
+      item.livestreamId === (cartItemDto.livestreamId || null)
+    );
     if (!existingCartItem) throw new HttpException('Cart item not found', HttpStatus.NOT_FOUND);
 
     if (existingCartItem.quantity <= quantity) await this.cartItemRepository.remove(existingCartItem);

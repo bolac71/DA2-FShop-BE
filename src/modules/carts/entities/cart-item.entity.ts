@@ -29,6 +29,9 @@ export class CartItem {
   @Exclude()
   variant: ProductVariant;
 
+  @Column({ name: 'livestream_id', type: 'int', nullable: true })
+  livestreamId: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

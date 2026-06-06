@@ -347,6 +347,7 @@ export class OrdersService {
             variant,
             quantity: item.quantity,
             price: variant.product.price,
+            livestreamId: item.livestreamId || null,
           });
           await manager.save(orderItem);
           subtotal += Number(variant.product.price) * item.quantity;
@@ -394,7 +395,7 @@ export class OrdersService {
 
           if (cart && cart.items.length > 0) {
             const cartItem = cart.items.find(
-              (ci) => ci.variant.id === variant.id,
+              (ci) => ci.variant.id === variant.id && ci.livestreamId === (item.livestreamId || null),
             );
 
             if (cartItem) {
