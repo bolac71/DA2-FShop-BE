@@ -25,6 +25,7 @@ import {
   CreateLivestreamDto,
   QueryLivestreamDto,
   UpdateLivestreamDto,
+  AddLivestreamProductsBatchDto,
 } from './dtos';
 import { LivestreamsService } from './livestreams.service';
 import { LivestreamsGateway } from './livestreams.gateway';
@@ -100,7 +101,27 @@ export class LivestreamsController {
     @Body() dto: AddLivestreamProductDto,
   ) {
     const { sub } = req['user'];
-    return this.livestreamsService.addProduct(id, sub, dto);
+    return this.livestreamsService.addProduct(id, sub, dto).then((res) => {
+      this.livestreamsGateway.emitPinnedProductsUpdated(id);
+      return res;
+    });
+  }
+
+  @Post(':id/products/batch')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Pin multiple products to livestream' })
+  addProductsBatch(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AddLivestreamProductsBatchDto,
+  ) {
+    const { sub } = req['user'];
+    return this.livestreamsService.addProductsBatch(id, sub, dto).then((res) => {
+      this.livestreamsGateway.emitPinnedProductsUpdated(id);
+      return res;
+    });
   }
 
   @Delete(':id/products/:productId')
@@ -114,7 +135,10 @@ export class LivestreamsController {
     @Param('productId', ParseIntPipe) productId: number,
   ) {
     const { sub } = req['user'];
-    return this.livestreamsService.removeProduct(id, sub, productId);
+    return this.livestreamsService.removeProduct(id, sub, productId).then((res) => {
+      this.livestreamsGateway.emitPinnedProductsUpdated(id);
+      return res;
+    });
   }
 
   @Get()

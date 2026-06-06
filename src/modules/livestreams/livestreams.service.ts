@@ -11,6 +11,7 @@ import {
   CreateLivestreamDto,
   QueryLivestreamDto,
   UpdateLivestreamDto,
+  AddLivestreamProductsBatchDto,
 } from './dtos';
 import {
   Livestream,
@@ -230,6 +231,7 @@ export class LivestreamsService {
         'pinnedProducts',
         'pinnedProducts.product',
         'pinnedProducts.product.images',
+        'pinnedProducts.product.variants',
       ],
     });
     if (!livestream) {
@@ -271,6 +273,45 @@ export class LivestreamsService {
       unitsSold: 0,
     });
     return this.livestreamProductRepository.save(livestreamProduct);
+  }
+
+  async addProductsBatch(livestreamId: number, hostId: number, dto: AddLivestreamProductsBatchDto) {
+    const livestream = await this.ensureHostAccess(livestreamId, hostId);
+    if (livestream.status === LivestreamStatus.ENDED) {
+      throw new HttpException('Livestream already ended', HttpStatus.BAD_REQUEST);
+    }
+
+    const products = await this.productRepository.find({
+      where: {
+        id: In(dto.productIds),
+        isActive: true,
+      }
+    });
+
+    const existingPinned = await this.livestreamProductRepository.find({
+      where: { livestreamId }
+    });
+    const existingProductIds = new Set(existingPinned.map(ep => ep.productId));
+    let nextPosition = Math.max(0, ...existingPinned.map(ep => ep.position)) + 1;
+
+    const newPinnedProducts: LivestreamProduct[] = [];
+    for (const product of products) {
+      if (!existingProductIds.has(product.id)) {
+        const lp = this.livestreamProductRepository.create({
+          livestreamId,
+          productId: product.id,
+          position: nextPosition++,
+          unitsSold: 0,
+        });
+        newPinnedProducts.push(lp);
+      }
+    }
+
+    if (newPinnedProducts.length > 0) {
+      await this.livestreamProductRepository.save(newPinnedProducts);
+    }
+
+    return { success: true, count: newPinnedProducts.length };
   }
 
   async removeProduct(livestreamId: number, hostId: number, productId: number) {

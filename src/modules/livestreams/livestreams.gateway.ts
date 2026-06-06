@@ -134,4 +134,8 @@ export class LivestreamsGateway implements OnGatewayConnection, OnGatewayDisconn
   emitNewComment(livestreamId: number, comment: unknown) {
     this.server.to(`livestream-${livestreamId}`).emit('newLivestreamComment', comment);
   }
+
+  emitPinnedProductsUpdated(livestreamId: number) {
+    this.server.to(`livestream-${livestreamId}`).emit('pinnedProductsUpdated', { livestreamId });
+  }
 }
