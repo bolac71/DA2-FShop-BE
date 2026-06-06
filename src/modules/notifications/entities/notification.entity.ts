@@ -23,6 +23,9 @@ export class Notification {
     @Column({ default: false, nullable: false })
     isRead: boolean;
 
+    @Column({ type: 'int', nullable: true })
+    referenceId: number | null;
+
     @ManyToOne(() => User, (user) => user.notifications, { nullable: true })
     @JoinColumn({ name: 'userId' })
     user: User;

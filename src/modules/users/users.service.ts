@@ -11,7 +11,8 @@ import { hashPassword } from 'src/utils/hash';
 import { QueryDto } from 'src/dtos/query.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { CartsService } from '../carts/carts.service';
-import { Role } from 'src/constants/role.enum';
+import { Role, NotificationType } from 'src/constants';
+import { NotificationsService } from '../notifications/notifications.service';
 
 
 type UpdateOwnProfileInput = {
@@ -29,6 +30,7 @@ export class UsersService {
     private dataSource: DataSource,
     private readonly cartService: CartsService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(createUserDto: CreateUserDto, file?: Express.Multer.File) {
@@ -328,6 +330,22 @@ export class UsersService {
     } else {
       const follow = this.userFollowRepository.create({ followerId, followingId });
       await this.userFollowRepository.save(follow);
+
+      try {
+        const followerUser = await this.usersRepository.findOne({ where: { id: followerId } });
+        if (followerUser) {
+          await this.notificationsService.create({
+            userId: followingId,
+            type: NotificationType.POST,
+            title: 'Người theo dõi mới',
+            message: `${followerUser.fullName || followerUser.email} đã bắt đầu theo dõi trang cá nhân của bạn.`,
+            referenceId: followerId,
+          });
+        }
+      } catch (err: any) {
+        console.error(`Failed to send follow notification to user ${followingId}:`, err.message);
+      }
+
       return { followed: true };
     }
   }

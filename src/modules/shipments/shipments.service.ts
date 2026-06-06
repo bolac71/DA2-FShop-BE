@@ -220,6 +220,7 @@ export class ShipmentsService {
           message: payload.status_text
             ? `Trạng thái mới: ${payload.status_text}`
             : 'Trạng thái vận đơn đã được cập nhật.',
+          referenceId: shipment.order.id,
         });
       } catch {
         // Best-effort notification

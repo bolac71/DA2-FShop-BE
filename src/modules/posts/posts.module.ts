@@ -6,6 +6,7 @@ import { Post, PostComment, PostImage, PostLike } from './entities';
 import { Hashtag, PostHashtag } from './entities';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { ModerationModule } from '../moderation/moderation.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ModerationModule } from '../moderation/moderation.module';
     ]),
     CloudinaryModule,
     ModerationModule,
+    NotificationsModule,
   ],
   controllers: [PostsController],
   providers: [PostsService],

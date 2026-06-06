@@ -8,6 +8,8 @@ import { User } from 'src/entities';
 import { plainToInstance } from 'class-transformer';
 import { QueryDto } from 'src/dtos';
 import { ModerationService } from '../moderation/moderation.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from 'src/constants';
 
 @Injectable()
 export class PostsService {
@@ -27,6 +29,7 @@ export class PostsService {
     private dataSource: DataSource,
     private readonly cloudinaryService: CloudinaryService,
     private readonly moderationService: ModerationService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
@@ -481,6 +484,20 @@ export class PostsService {
     post.isActive = isActive;
     await this.postRepository.save(post);
 
+    try {
+      await this.notificationsService.create({
+        userId: post.userId,
+        type: NotificationType.POST,
+        title: isActive ? 'Bài viết đã được hiển thị' : 'Bài viết bị ẩn',
+        message: isActive
+          ? `Bài viết của bạn đã được quản trị viên phê duyệt hiển thị công khai.`
+          : `Bài viết của bạn đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.`,
+        referenceId: post.id,
+      });
+    } catch (err: any) {
+      this.logger.error(`Failed to send post status notification to user ${post.userId}: ${err.message}`);
+    }
+
     return {
       message: isActive ? 'Post restored successfully' : 'Post hidden successfully',
       data: post,
@@ -534,6 +551,20 @@ export class PostsService {
         post.totalLikes++;
         await manager.save(post);
 
+        if (post.userId !== userId) {
+          try {
+            await this.notificationsService.create({
+              userId: post.userId,
+              type: NotificationType.POST,
+              title: 'Tương tác bài viết',
+              message: `${user.fullName || user.email} đã thích bài viết của bạn.`,
+              referenceId: post.id,
+            });
+          } catch (err: any) {
+            this.logger.error(`Failed to send like notification to user ${post.userId}: ${err.message}`);
+          }
+        }
+
         return { message: 'Post liked', totalLikes: post.totalLikes};
       }
     })
@@ -567,6 +598,20 @@ export class PostsService {
       this.moderationService
         .moderateContent(createCommentDto.content, 'post_comment', savedComment.id, userId)
         .catch((err: Error) => this.logger.warn(`Comment moderation failed: ${err.message}`));
+
+      if (post.userId !== userId) {
+        try {
+          await this.notificationsService.create({
+            userId: post.userId,
+            type: NotificationType.POST,
+            title: 'Bình luận mới',
+            message: `${user.fullName || user.email} đã bình luận về bài viết của bạn: "${createCommentDto.content}"`,
+            referenceId: post.id,
+          });
+        } catch (err: any) {
+          this.logger.error(`Failed to send comment notification to user ${post.userId}: ${err.message}`);
+        }
+      }
 
       return plainToInstance(PostComment, savedComment);
     })
@@ -756,6 +801,20 @@ export class PostsService {
       // 5. Update post totalComments
       parentComment.post.totalComments += 1;
       await manager.save(parentComment.post);
+
+      if (parentComment.userId && parentComment.userId !== userId) {
+        try {
+          await this.notificationsService.create({
+            userId: parentComment.userId,
+            type: NotificationType.POST,
+            title: 'Phản hồi bình luận',
+            message: `${user.fullName || user.email} đã phản hồi bình luận của bạn: "${dto.content}"`,
+            referenceId: parentComment.post.id,
+          });
+        } catch (err: any) {
+          this.logger.error(`Failed to send reply notification to user ${parentComment.userId}: ${err.message}`);
+        }
+      }
 
       return savedReply;
     });

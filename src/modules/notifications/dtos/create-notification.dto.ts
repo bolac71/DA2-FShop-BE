@@ -1,4 +1,4 @@
-import { IsEnum } from "class-validator";
+import { IsEnum, IsInt, IsOptional } from "class-validator";
 import { NotificationType } from "src/constants";
 import { StringRequired, NumberRequired } from "src/decorators/dto.decorator";
 
@@ -14,4 +14,8 @@ export class CreateNotificationDto {
 
     @NumberRequired("User ID")
     userId: number;
+
+    @IsOptional()
+    @IsInt()
+    referenceId?: number;
 }
