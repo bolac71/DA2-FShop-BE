@@ -9,6 +9,7 @@ import { JwtStrategy } from 'src/strategies/jwt.strategy';
 import { GoogleStrategy } from 'src/strategies/google.strategy';
 import { GoogleOAuthUtil } from 'src/utils/google-oauth.util';
 import { getJwtConfig } from 'src/configs/jwt.config';
+import { MailService } from './mail.service';
 
 @Module({
   imports: [
@@ -21,7 +22,8 @@ import { getJwtConfig } from 'src/configs/jwt.config';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, GoogleOAuthUtil],
+  providers: [AuthService, JwtStrategy, GoogleStrategy, GoogleOAuthUtil, MailService],
   exports: [JwtModule],
 })
 export class AuthModule {}
+

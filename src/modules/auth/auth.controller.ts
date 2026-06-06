@@ -26,10 +26,20 @@ import {
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, GoogleLoginDto, LinkGoogleDto, LoginDto, UpdateMeDto } from './dtos';
+import {
+  ChangePasswordDto,
+  GoogleLoginDto,
+  LinkGoogleDto,
+  LoginDto,
+  UpdateMeDto,
+  ForgotPasswordRequestDto,
+  ForgotPasswordVerifyDto,
+  ForgotPasswordResetDto,
+} from './dtos';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
 import type { JwtPayload } from 'src/strategies/jwt.strategy';
+
 import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Authentication')
@@ -166,4 +176,26 @@ export class AuthController {
     await this.authService.changePassword(user.sub, changePasswordDto);
     return null;
   }
+
+  @Post('forgot-password/request')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request a forgot password validation OTP code' })
+  async forgotPasswordRequest(@Body() dto: ForgotPasswordRequestDto) {
+    return this.authService.forgotPasswordRequest(dto);
+  }
+
+  @Post('forgot-password/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify forgot password OTP code' })
+  async forgotPasswordVerify(@Body() dto: ForgotPasswordVerifyDto) {
+    return this.authService.forgotPasswordVerify(dto);
+  }
+
+  @Post('forgot-password/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using verified OTP code' })
+  async forgotPasswordReset(@Body() dto: ForgotPasswordResetDto) {
+    return this.authService.forgotPasswordReset(dto);
+  }
 }
+
