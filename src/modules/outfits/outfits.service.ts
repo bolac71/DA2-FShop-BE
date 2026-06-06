@@ -100,13 +100,16 @@ export class OutfitsService {
 
     const cart = await this.cartRepo.findOne({
       where: { user: { id: userId } },
-      relations: ['user'],
+      relations: ['user', 'items', 'items.variant', 'items.variant.product'],
     });
     if (!cart) {
       throw new HttpException('Cart not found', HttpStatus.NOT_FOUND);
     }
 
-    let latestCart: unknown = null;
+    const addedItems: any[] = [];
+    const skippedItems: any[] = [];
+    let latestCart: any = cart;
+
     for (const item of outfit.items) {
       if (!item.variant?.id) {
         throw new HttpException(
@@ -114,14 +117,40 @@ export class OutfitsService {
           HttpStatus.BAD_REQUEST,
         );
       }
-      await this.assertInventory(item.variant.id, item.quantity || 1);
-      latestCart = await this.cartsService.addToCart(cart.id, {
-        variantId: item.variant.id,
-        quantity: item.quantity || 1,
-      });
+
+      // Check if this variant is already in the cart
+      const exists = cart.items?.some(
+        (cartItem) => cartItem.variant?.id === item.variant.id,
+      );
+
+      if (exists) {
+        skippedItems.push({
+          productId: item.product.id,
+          productName: item.product.name,
+          variantId: item.variant.id,
+          sku: item.variant.sku,
+        });
+      } else {
+        await this.assertInventory(item.variant.id, item.quantity || 1);
+        latestCart = await this.cartsService.addToCart(cart.id, {
+          variantId: item.variant.id,
+          quantity: item.quantity || 1,
+        });
+        addedItems.push({
+          productId: item.product.id,
+          productName: item.product.name,
+          variantId: item.variant.id,
+          sku: item.variant.sku,
+          quantity: item.quantity || 1,
+        });
+      }
     }
 
-    return latestCart;
+    return {
+      cart: latestCart,
+      addedItems,
+      skippedItems,
+    };
   }
 
   private outfitRelations() {
