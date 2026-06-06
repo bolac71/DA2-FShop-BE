@@ -7,13 +7,14 @@ import { DataSource, Like, Not, Repository } from 'typeorm';
 import { CreateReviewDto, UpdateReviewDto, VoteReviewDto } from './dtos';
 import { Order, Product, User } from 'src/entities';
 import { ProductVariant } from 'src/modules/products/entities/product-variant.entity';
-import { OrderStatus } from 'src/constants';
+import { NotificationType, OrderStatus } from 'src/constants';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { plainToInstance } from 'class-transformer';
 import { QueryDto } from 'src/dtos';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { ModerationService } from '../moderation/moderation.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ReviewsService {
@@ -25,6 +26,7 @@ export class ReviewsService {
     private dataSource: DataSource,
     private cloudinaryService: CloudinaryService,
     private moderationService: ModerationService,
+    private notificationsService: NotificationsService,
   ) {}
 
   
@@ -97,6 +99,19 @@ export class ReviewsService {
       }
 
       await this.updateProductRating(manager, variant.productId);
+      await this.redis.del(`review:summary:${variant.productId}`);
+
+      // Gửi thông báo cho admin
+      try {
+        await this.notificationsService.notifyAdmins({
+          type: NotificationType.REVIEW,
+          title: `Đánh giá mới cho đơn hàng #${order.id}`,
+          message: `Đánh giá mới cho đơn hàng #${order.id}: ${createReviewDto.rating} sao`,
+          referenceId: order.id,
+        });
+      } catch (err) {
+        this.logger.error(`Failed to notify admins of new review: ${err.message}`);
+      }
 
       // Fire-and-forget moderation — does not delay the user response
       if (createReviewDto.comment?.trim()) {

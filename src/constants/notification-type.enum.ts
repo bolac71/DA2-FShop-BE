@@ -5,4 +5,5 @@ export enum NotificationType {
   POST = 'POST',
   LIVESTREAM = 'LIVESTREAM',
   ADMIN_BROADCAST = 'ADMIN_BROADCAST',
+  INVENTORY = 'INVENTORY',
 }

@@ -21,6 +21,7 @@ import {
   ProductVariant,
   User,
   Payment,
+  SystemSetting,
 } from '../../entities';
 
 import { UserInteractionsService } from '../user-interactions/user-interactions.service';
@@ -311,7 +312,7 @@ export class OrdersService {
         for (const item of items) {
           const variant = await manager.findOne(ProductVariant, {
             where: { id: item.variantId },
-            relations: ['product'],
+            relations: ['product', 'size', 'color'],
           });
           if (!variant)
             throw new HttpException(
@@ -353,6 +354,34 @@ export class OrdersService {
 
           inventory.quantity -= item.quantity;
           await manager.save(inventory);
+
+          // Cảnh báo tồn kho cho Admin
+          try {
+            const lowStockSetting = await manager.findOne(SystemSetting, {
+              where: { key: 'STOCK_LOW_THRESHOLD' },
+            });
+            const lowStockThreshold = lowStockSetting ? parseInt(lowStockSetting.value, 10) : 5;
+
+            if (inventory.quantity === 0) {
+              await this.notificationService.notifyAdmins({
+                type: NotificationType.INVENTORY,
+                title: `Sản phẩm hết hàng`,
+                message: `Sản phẩm ${variant.product.name} đã hết hàng.`,
+                referenceId: variant.productId,
+              });
+            } else if (inventory.quantity < lowStockThreshold) {
+              const sizeLabel = variant.size?.name ? ` - Size ${variant.size.name}` : '';
+              const colorLabel = variant.color?.name ? ` - Màu ${variant.color.name}` : '';
+              await this.notificationService.notifyAdmins({
+                type: NotificationType.INVENTORY,
+                title: `Cảnh báo tồn kho thấp`,
+                message: `Cảnh báo: Sản phẩm ${variant.product.name}${sizeLabel}${colorLabel} chỉ còn ${inventory.quantity} sản phẩm trong kho.`,
+                referenceId: variant.productId,
+              });
+            }
+          } catch (err) {
+            this.logger.error(`Failed to trigger inventory low/out-of-stock notifications: ${err.message}`);
+          }
 
           const inventoryTransaction = manager.create(InventoryTransaction, {
             variantId: variant.id,
