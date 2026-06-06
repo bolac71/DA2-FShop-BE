@@ -165,6 +165,7 @@ export class LivestreamsService {
       title: `Livestream started: ${savedLivestream.title}`,
       message: `A new fashion livestream is now live. Join now!`,
       type: NotificationType.LIVESTREAM,
+      referenceId: savedLivestream.id,
     });
 
     return savedLivestream;

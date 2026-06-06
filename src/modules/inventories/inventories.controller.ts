@@ -75,8 +75,9 @@ export class InventoriesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get low stock inventories (admin only)' })
   @ApiResponse({ status: 200, description: 'List of low stock inventories' })
-  getLowStock(@Query('threshold') threshold: number = 10) {
-    return this.inventoriesService.getLowStockInventories(threshold);
+  getLowStock(@Query('threshold') threshold?: string) {
+    const thresholdNum = threshold !== undefined && threshold !== '' ? Number(threshold) : undefined;
+    return this.inventoriesService.getLowStockInventories(thresholdNum);
   }
 
   /**

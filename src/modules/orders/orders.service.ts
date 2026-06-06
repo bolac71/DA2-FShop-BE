@@ -21,6 +21,7 @@ import {
   ProductVariant,
   User,
   Payment,
+  SystemSetting,
 } from '../../entities';
 
 import { UserInteractionsService } from '../user-interactions/user-interactions.service';
@@ -311,7 +312,7 @@ export class OrdersService {
         for (const item of items) {
           const variant = await manager.findOne(ProductVariant, {
             where: { id: item.variantId },
-            relations: ['product'],
+            relations: ['product', 'size', 'color'],
           });
           if (!variant)
             throw new HttpException(
@@ -353,6 +354,34 @@ export class OrdersService {
 
           inventory.quantity -= item.quantity;
           await manager.save(inventory);
+
+          // Cảnh báo tồn kho cho Admin
+          try {
+            const lowStockSetting = await manager.findOne(SystemSetting, {
+              where: { key: 'STOCK_LOW_THRESHOLD' },
+            });
+            const lowStockThreshold = lowStockSetting ? parseInt(lowStockSetting.value, 10) : 5;
+
+            if (inventory.quantity === 0) {
+              await this.notificationService.notifyAdmins({
+                type: NotificationType.INVENTORY,
+                title: `Sản phẩm hết hàng`,
+                message: `Sản phẩm ${variant.product.name} đã hết hàng.`,
+                referenceId: variant.productId,
+              });
+            } else if (inventory.quantity < lowStockThreshold) {
+              const sizeLabel = variant.size?.name ? ` - Size ${variant.size.name}` : '';
+              const colorLabel = variant.color?.name ? ` - Màu ${variant.color.name}` : '';
+              await this.notificationService.notifyAdmins({
+                type: NotificationType.INVENTORY,
+                title: `Cảnh báo tồn kho thấp`,
+                message: `Cảnh báo: Sản phẩm ${variant.product.name}${sizeLabel}${colorLabel} chỉ còn ${inventory.quantity} sản phẩm trong kho.`,
+                referenceId: variant.productId,
+              });
+            }
+          } catch (err) {
+            this.logger.error(`Failed to trigger inventory low/out-of-stock notifications: ${err.message}`);
+          }
 
           const inventoryTransaction = manager.create(InventoryTransaction, {
             variantId: variant.id,
@@ -501,12 +530,13 @@ export class OrdersService {
           await manager.save(livestreamOrder);
         }
 
-        return { order, orderedProductIds };
+        return { order, orderedProductIds, user };
       },
     );
 
     const createdOrder = result.order;
     const orderedProductIds = result.orderedProductIds;
+    const orderUser = result.user;
 
     this.logger.log(
       `Create order committed: order=${createdOrder.id}, user=${userId}, total=${createdOrder.totalAmount}`,
@@ -524,6 +554,7 @@ export class OrdersService {
         type: NotificationType.ORDER,
         title: `Đặt hàng #${createdOrder.id} thành công`,
         message: `Đơn hàng #${createdOrder.id} đã được tạo. Vui lòng theo dõi trạng thái trong mục Đơn hàng của tôi.`,
+        referenceId: createdOrder.id,
       });
       this.logger.log(
         `Order notification success: order=${createdOrder.id}, user=${userId}`,
@@ -531,6 +562,23 @@ export class OrdersService {
     } catch (error) {
       this.logger.error(
         `Order notification failed: order=${createdOrder.id}, user=${userId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
+    try {
+      this.logger.log(
+        `Trigger admin order notification: order=${createdOrder.id}`,
+      );
+      await this.notificationService.notifyAdmins({
+        type: NotificationType.ORDER,
+        title: `Đơn hàng mới #${createdOrder.id}`,
+        message: `Có đơn hàng mới #${createdOrder.id} từ khách hàng ${orderUser.fullName || orderUser.email} đang chờ xác nhận.`,
+        referenceId: createdOrder.id,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Admin order notification failed: order=${createdOrder.id}`,
         error instanceof Error ? error.stack : undefined,
       );
     }
@@ -931,6 +979,7 @@ export class OrdersService {
           type: NotificationType.ORDER,
           title: notificationPayload.title,
           message: notificationPayload.message,
+          referenceId: result.orderId,
         });
         console.log(
           `Status notification success: order=${result.orderId}, user=${result.userId}`,
@@ -1137,6 +1186,7 @@ export class OrdersService {
             type: NotificationType.ORDER,
             title: `Đơn hàng #${order.id} - Vận đơn đã được tạo`,
             message: `Mã vận đơn: ${trackingCode || 'đang cập nhật'}`,
+            referenceId: order.id,
           });
         } catch (e) {
           this.logger.error(

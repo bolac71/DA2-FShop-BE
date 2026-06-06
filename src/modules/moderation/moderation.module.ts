@@ -8,8 +8,13 @@ import { Post } from '../posts/entities/post.entity';
 import { PostComment } from '../posts/entities/post-comment.entity';
 import { LivestreamComment } from '../livestreams/entities/livestream-comment.entity';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([ModerationLog, Post, Review, PostComment, LivestreamComment])],
+  imports: [
+    TypeOrmModule.forFeature([ModerationLog, Post, Review, PostComment, LivestreamComment]),
+    NotificationsModule,
+  ],
   controllers: [ModerationController],
   providers: [ModerationService],
   exports: [ModerationService],

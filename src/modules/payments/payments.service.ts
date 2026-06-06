@@ -4,10 +4,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Payment, PaymentRetry } from './entities';
 import { Order } from 'src/modules/orders/entities/order.entity';
-import { PaymentStatus, PaymentMethod, OrderStatus } from 'src/constants';
+import { PaymentStatus, PaymentMethod, OrderStatus, NotificationType } from 'src/constants';
 import { CreateAtmPaymentRequestDto, CreatePaymentRequestDto, PaymentResponseDto } from './dtos';
 import { MoMoGateway } from 'src/utils/momo-gateway.util';
 import { MetricsService } from '../metrics/metrics.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PaymentsService {
@@ -26,6 +27,7 @@ export class PaymentsService {
     private readonly dataSource: DataSource,
     private readonly momoGateway: MoMoGateway,
     private readonly metricsService: MetricsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -226,6 +228,7 @@ export class PaymentsService {
       }
 
       await this.paymentRepository.save(payment);
+      await this.sendPaymentNotification(payment);
 
       return { status: 'ok', message: 'Webhook processed successfully' };
     } catch (error) {
@@ -381,6 +384,7 @@ export class PaymentsService {
         payment.status = PaymentStatus.FAILED;
         await this.paymentRepository.save(payment);
       }
+      await this.sendPaymentNotification(payment);
     }
 
     return {
@@ -406,5 +410,33 @@ export class PaymentsService {
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
     };
+  }
+
+  private async sendPaymentNotification(payment: Payment) {
+    if (payment.status === PaymentStatus.COMPLETED) {
+      try {
+        await this.notificationsService.create({
+          userId: payment.userId,
+          type: NotificationType.ORDER,
+          title: `Thanh toán đơn hàng #${payment.orderId} thành công`,
+          message: `Đơn hàng #${payment.orderId} trị giá ${Number(payment.amount).toLocaleString('vi-VN')}đ đã được thanh toán thành công qua MoMo. Trạng thái đơn hàng tự động chuyển sang 'Đã xác nhận'.`,
+          referenceId: payment.orderId,
+        });
+      } catch (error: any) {
+        console.error(`Failed to send payment success notification:`, error.message);
+      }
+    } else if (payment.status === PaymentStatus.FAILED) {
+      try {
+        await this.notificationsService.create({
+          userId: payment.userId,
+          type: NotificationType.ORDER,
+          title: `Thanh toán đơn hàng #${payment.orderId} thất bại`,
+          message: `Thanh toán qua MoMo cho đơn hàng #${payment.orderId} trị giá ${Number(payment.amount).toLocaleString('vi-VN')}đ không thành công. Bạn có thể thử thanh toán lại trong Lịch sử đơn hàng.`,
+          referenceId: payment.orderId,
+        });
+      } catch (error: any) {
+        console.error(`Failed to send payment failure notification:`, error.message);
+      }
+    }
   }
 }

@@ -10,6 +10,11 @@ import { LivestreamComment } from '../livestreams/entities/livestream-comment.en
 import { MetricsService } from '../metrics/metrics.service';
 import type { ModerationV2ApiResponse } from './dtos/moderation.dto';
 import type { ModerationQueueQueryDto, ModerationRecentQueryDto, OverrideDecisionDto } from './dtos/moderation.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from 'src/constants';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import Redis from 'ioredis';
+import { Product } from 'src/entities';
 
 type ModeratedContentType = 'post' | 'review' | 'post_comment' | 'livestream_comment';
 type ContentModerationStatus = 'approved' | 'flagged' | 'rejected';
@@ -26,6 +31,8 @@ export class ModerationService {
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
     private readonly metricsService: MetricsService,
+    private readonly notificationsService: NotificationsService,
+    @InjectRedis() private readonly redis: Redis,
   ) {
     const aiServerUrl = this.configService.get<string>('AI_SERVER_URL');
     if (!aiServerUrl) {
@@ -113,6 +120,50 @@ export class ModerationService {
         await this.dataSource.getRepository(Post).update(contentId, { moderationStatus: status });
       } else if (contentType === 'review') {
         await this.dataSource.getRepository(Review).update(contentId, { moderationStatus: status });
+        
+        // Gửi thông báo cho user viết review và cập nhật lại điểm số trung bình sản phẩm
+        const review = await this.dataSource.getRepository(Review).findOne({
+          where: { id: contentId },
+          relations: ['variant'],
+        });
+        if (review) {
+          const productId = review.variant.productId;
+          await this.dataSource.transaction(async (manager) => {
+            const { avg, count } = await manager
+              .createQueryBuilder(Review, 'r')
+              .innerJoin('r.variant', 'v')
+              .select('AVG(r.rating)', 'avg')
+              .addSelect('COUNT(r.id)', 'count')
+              .where('v.product = :productId', { productId })
+              .andWhere('r.isActive = :isActive', { isActive: true })
+              .andWhere('r.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
+              .getRawOne();
+
+            await manager.update(Product, productId, {
+              averageRating: avg ?? 0,
+              reviewCount: count ?? 0,
+            });
+          });
+          await this.redis.del(`review:summary:${productId}`);
+
+          let message = '';
+          if (status === 'flagged') {
+            message = 'Đánh giá của bạn đang chờ kiểm duyệt.';
+          } else if (status === 'rejected') {
+            message = 'Đánh giá của bạn đã bị từ chối do vi phạm.';
+          } else if (status === 'approved') {
+            message = 'Đánh giá của bạn đã được duyệt.';
+          }
+          if (message) {
+            await this.notificationsService.create({
+              userId: review.userId,
+              type: NotificationType.REVIEW,
+              title: `Cập nhật trạng thái đánh giá`,
+              message,
+              referenceId: review.orderId,
+            }).catch(err => this.logger.warn(`Failed to send review moderation notification to user ${review.userId}: ${err.message}`));
+          }
+        }
       } else if (contentType === 'post_comment') {
         await this.dataSource.getRepository(PostComment).update(contentId, { moderationStatus: status });
       } else {

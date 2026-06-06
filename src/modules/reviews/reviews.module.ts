@@ -7,11 +7,14 @@ import { Order, Product, ProductVariant, User } from 'src/entities';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { ModerationModule } from '../moderation/moderation.module';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Review, ReviewImage, ReviewVote, User, Product, ProductVariant, Order]),
     CloudinaryModule,
     ModerationModule,
+    NotificationsModule,
   ],
   controllers: [ReviewsController],
   providers: [ReviewsService],

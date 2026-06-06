@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeviceToken, Notification, User } from 'src/entities';
-import { NotificationType } from 'src/constants';
+import { NotificationType, Role } from 'src/constants';
 import { ILike, In, MoreThan, Repository } from 'typeorm';
 import { NotificationGateway } from './notifications.gateway';
 import {
@@ -100,6 +100,27 @@ export class NotificationsService {
     return totalInserted;
   }
 
+  async notifyAdmins(payload: Omit<CreateNotificationDto, 'userId'>) {
+    const admins = await this.userRepository.find({
+      where: { role: Role.ADMIN, isActive: true },
+      select: { id: true },
+    });
+
+    const notifications = await Promise.all(
+      admins.map((admin) =>
+        this.create({
+          ...payload,
+          userId: admin.id,
+        }).catch((err) => {
+          this.logger.error(`Failed to notify admin ${admin.id}: ${err.message}`);
+          return null;
+        }),
+      ),
+    );
+
+    return notifications.filter(Boolean);
+  }
+
   async createAdminBroadcast(payload: CreateAdminBroadcastDto, adminId: number) {
     const inserted = await this.createForAllActiveUsers(payload);
 
@@ -183,11 +204,13 @@ export class NotificationsService {
     return response;
   }
 
-  async markOneAsRead(notificationId: number, userId: number) {
+  async markOneAsRead(notificationId: number, userId: number, role?: string) {
+    const isUserAdmin = role === 'admin';
+
     const notification = await this.notificationRepository.findOne({
       where: {
         id: notificationId,
-        user: { id: userId },
+        ...(!isUserAdmin && { user: { id: userId } }),
       },
     });
 
@@ -199,7 +222,16 @@ export class NotificationsService {
     return this.notificationRepository.save(notification);
   }
 
-  async markAsRead(userId: number) {
+  async markAsRead(userId: number, role?: string) {
+    const isUserAdmin = role === 'admin';
+
+    if (isUserAdmin) {
+      return this.notificationRepository.update(
+        { isRead: false },
+        { isRead: true },
+      );
+    }
+
     if (!(await this.userRepository.findOneBy({ id: userId })))
       throw new HttpException('Not found user', HttpStatus.NOT_FOUND);
     return this.notificationRepository.update(

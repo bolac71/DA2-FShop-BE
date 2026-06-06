@@ -11,6 +11,7 @@ import { ProductVariant } from '../products/entities/product-variant.entity';
 import { InventoryType } from '../../constants/inventory-type.enum';
 import { User } from 'src/entities';
 import { QueryDto } from 'src/dtos';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class InventoriesService {
@@ -23,6 +24,7 @@ export class InventoriesService {
     private productVariantRepository: Repository<ProductVariant>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private readonly settingsService: SettingsService,
   ) {}
 
   /**
@@ -193,13 +195,17 @@ export class InventoriesService {
     return { pagination: { total, page, limit }, data };
   }
 
-  /**
-   * Get inventory low stock alert (quantity below threshold)
-   */
-  async getLowStockInventories(threshold: number = 10){
+  async getLowStockInventories(threshold?: number){
+    let limit = threshold;
+    if (limit === undefined || isNaN(limit)) {
+      const settingVal = await this.settingsService.getVal('STOCK_LOW_THRESHOLD', '10');
+      limit = parseInt(settingVal, 10) || 10;
+    }
     return await this.inventoryRepository
       .createQueryBuilder('inventory')
-      .where('inventory.quantity <= :threshold', { threshold })
+      .leftJoinAndSelect('inventory.variant', 'variant')
+      .leftJoinAndSelect('variant.product', 'product')
+      .where('inventory.quantity <= :threshold', { threshold: limit })
       .orderBy('inventory.quantity', 'ASC')
       .getMany();
   }

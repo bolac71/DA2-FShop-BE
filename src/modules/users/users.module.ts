@@ -7,11 +7,12 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { Address } from '../addresses/entities/address.entity';
 import { Cart } from '../carts/entities';
 import { CartsModule } from '../carts/carts.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 import { UserFollow } from './entities/user-follow.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Address, Cart, UserFollow]), CloudinaryModule, CartsModule],
+  imports: [TypeOrmModule.forFeature([User, Address, Cart, UserFollow]), CloudinaryModule, CartsModule, NotificationsModule],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],

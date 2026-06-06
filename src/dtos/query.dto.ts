@@ -22,4 +22,7 @@ export class QueryDto {
     @IsIn(['ASC', 'DESC'])
     @ApiProperty({ enum: ['ASC', 'DESC'], required: false })
     sortOrder?: 'ASC' | 'DESC';
+
+    @StringOptional()
+    role?: string;
 }
