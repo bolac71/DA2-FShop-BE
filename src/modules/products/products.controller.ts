@@ -233,6 +233,45 @@ export class ProductsController {
     return this.productsService.virtualTryon2D(productId, personImage, garmentDesc);
   }
 
+  @Post('virtual-tryon/outfit')
+  @ApiConsumes('multipart/form-data')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('personImage'))
+  @ApiOperation({ summary: 'Gemini AI outfit preview: upload person photo and apply up to 3 products' })
+  async virtualTryonOutfit(
+    @UploadedFile() personImage: Express.Multer.File,
+    @Body('productIds') productIds: string | string[],
+    @Body('stylePrompt') stylePrompt?: string,
+  ) {
+    if (!personImage) {
+      throw new BadRequestException('personImage file is required');
+    }
+    const parsedProductIds = this.parseProductIds(productIds);
+    return this.productsService.virtualTryonOutfit(personImage, parsedProductIds, stylePrompt);
+  }
+
+  private parseProductIds(productIds: string | string[] | undefined): number[] {
+    const rawValues = Array.isArray(productIds) ? productIds : [productIds ?? ''];
+    const values = rawValues.flatMap((value) => {
+      const trimmed = String(value ?? '').trim();
+      if (!trimmed) return [];
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown;
+          return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+        } catch {
+          throw new BadRequestException('productIds must be a JSON array or comma-separated list');
+        }
+      }
+      return trimmed.split(',');
+    });
+    const ids = values.map((value) => Number(String(value).trim())).filter((id) => Number.isInteger(id) && id > 0);
+    if (ids.length === 0) {
+      throw new BadRequestException('At least one productId is required');
+    }
+    return ids;
+  }
+
   private async attachTryonAssetUploads<T extends CreateProductTryonAssetDto | UpdateProductTryonAssetDto>(
     dto: T,
     files?: {

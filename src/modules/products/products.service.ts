@@ -19,8 +19,14 @@ import { Coupon } from '../coupons/entities';
 import { CouponsService } from '../coupons/coupons.service';
 import { AiService } from '../ai/ai.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import sharp from 'sharp';
 
 import { getBestCouponForProduct } from 'src/utils/product.util';
+
+type OutfitTryonProduct = Product & {
+  images?: ProductImage[];
+  variants?: ProductVariant[];
+};
 
 @Injectable()
 export class ProductsService {
@@ -543,5 +549,163 @@ export class ProductsService {
 
     const uploaded = await this.cloudinaryService.uploadBufferToFolder(resultBuffer, 'virtual-tryon');
     return { resultImageUrl: uploaded.secure_url };
+  }
+
+  async virtualTryonOutfit(
+    personFile: Express.Multer.File,
+    productIds: number[],
+    stylePrompt?: string,
+  ): Promise<{ resultImageUrl: string; provider: 'gemini'; productIds: number[] }> {
+    const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+    const MAX_PRODUCTS = 3;
+
+    if (personFile.size > MAX_IMAGE_SIZE) {
+      throw new HttpException('Person image exceeds 10MB limit', HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+
+    const uniqueIds = Array.from(new Set(productIds.filter((id) => Number.isInteger(id) && id > 0)));
+    if (uniqueIds.length === 0) {
+      throw new HttpException('At least one product is required', HttpStatus.BAD_REQUEST);
+    }
+    if (uniqueIds.length > MAX_PRODUCTS) {
+      throw new HttpException(`Gemini outfit preview supports up to ${MAX_PRODUCTS} products`, HttpStatus.BAD_REQUEST);
+    }
+
+    const products = await this.productsRepository.find({
+      where: { id: In(uniqueIds), isActive: true },
+      relations: ['images', 'variants', 'brand', 'category'],
+    }) as OutfitTryonProduct[];
+
+    const productMap = new Map(products.map((product) => [product.id, product]));
+    const orderedProducts = uniqueIds.map((id) => productMap.get(id)).filter(Boolean) as OutfitTryonProduct[];
+    if (orderedProducts.length !== uniqueIds.length) {
+      throw new HttpException('One or more products were not found or are inactive', HttpStatus.NOT_FOUND);
+    }
+
+    const productsWithImages = orderedProducts.map((product) => ({
+      product,
+      imageUrl: this.resolveTryonProductImageUrl(product),
+    }));
+    const missingImageProduct = productsWithImages.find((item) => !item.imageUrl);
+    if (missingImageProduct) {
+      throw new HttpException(
+        `Product "${missingImageProduct.product.name}" has no image to use for outfit preview`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+
+    const imageBuffers = await Promise.all(
+      productsWithImages.map(async ({ imageUrl }) => this.downloadRemoteImage(imageUrl as string)),
+    );
+    const garmentSheet = await this.buildOutfitContactSheet(productsWithImages.map((item, index) => ({
+      index: index + 1,
+      name: item.product.name,
+      brand: item.product.brand?.name,
+      category: item.product.category?.name,
+      imageBuffer: imageBuffers[index],
+    })));
+    const prompt = this.buildGeminiOutfitPrompt(orderedProducts, stylePrompt);
+    const resultBuffer = await this.aiService.virtualTryonOutfit(personFile.buffer, garmentSheet, prompt);
+    const uploaded = await this.cloudinaryService.uploadBufferToFolder(resultBuffer, 'virtual-tryon/gemini');
+
+    return { resultImageUrl: uploaded.secure_url, provider: 'gemini', productIds: uniqueIds };
+  }
+
+  private resolveTryonProductImageUrl(product: OutfitTryonProduct): string | null {
+    return product.images?.find((image) => image.isActive)?.imageUrl
+      ?? product.images?.[0]?.imageUrl
+      ?? product.variants?.find((variant) => variant.isActive && variant.imageUrl)?.imageUrl
+      ?? product.variants?.find((variant) => variant.imageUrl)?.imageUrl
+      ?? null;
+  }
+
+  private async downloadRemoteImage(url: string): Promise<Buffer> {
+    const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!response.ok) {
+      throw new HttpException('Failed to fetch product image for outfit preview', HttpStatus.BAD_GATEWAY);
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  private escapeXml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  private truncateLabel(value: string, maxLength = 34): string {
+    return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+  }
+
+  private async buildOutfitContactSheet(items: Array<{
+    index: number;
+    name: string;
+    brand?: string;
+    category?: string;
+    imageBuffer: Buffer;
+  }>): Promise<Buffer> {
+    const cardWidth = 280;
+    const cardHeight = 330;
+    const padding = 18;
+    const width = (cardWidth * items.length) + (padding * (items.length + 1));
+    const height = cardHeight + (padding * 2);
+    const composites: sharp.OverlayOptions[] = [];
+
+    for (const [idx, item] of items.entries()) {
+      const left = padding + (idx * (cardWidth + padding));
+      const top = padding;
+      const image = await sharp(item.imageBuffer)
+        .rotate()
+        .resize(230, 220, { fit: 'contain', background: '#ffffff' })
+        .png()
+        .toBuffer();
+      const label = this.escapeXml(`Item ${item.index}: ${this.truncateLabel(item.name)}`);
+      const meta = this.escapeXml(this.truncateLabel([item.brand, item.category].filter(Boolean).join(' · '), 38));
+      const cardSvg = Buffer.from(`
+        <svg width="${cardWidth}" height="${cardHeight}" xmlns="http://www.w3.org/2000/svg">
+          <rect width="${cardWidth}" height="${cardHeight}" rx="18" fill="#ffffff" stroke="#dbe3ef" stroke-width="2"/>
+          <text x="18" y="270" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#102033">${label}</text>
+          <text x="18" y="299" font-family="Arial, sans-serif" font-size="15" fill="#607089">${meta}</text>
+        </svg>
+      `);
+
+      composites.push({ input: cardSvg, left, top });
+      composites.push({ input: image, left: left + 25, top: top + 22 });
+    }
+
+    return sharp({
+      create: {
+        width,
+        height,
+        channels: 3,
+        background: '#f8fafc',
+      },
+    })
+      .composite(composites)
+      .jpeg({ quality: 92 })
+      .toBuffer();
+  }
+
+  private buildGeminiOutfitPrompt(products: OutfitTryonProduct[], stylePrompt?: string): string {
+    const itemLines = products.map((product, index) => {
+      const descriptors = [
+        product.brand?.name,
+        product.category?.name,
+        product.name,
+      ].filter(Boolean).join(' - ');
+      return `Item ${index + 1}: ${descriptors}`;
+    });
+
+    return [
+      'Apply these exact catalog products to the person in the uploaded photo:',
+      ...itemLines,
+      'Keep the result realistic and suitable for an ecommerce fashion preview.',
+      'Preserve the original person identity, body proportions, face, pose, lighting, and camera angle.',
+      'Do not add products that are not listed.',
+      stylePrompt?.trim() ? `User styling request: ${stylePrompt.trim()}` : '',
+    ].filter(Boolean).join('\n');
   }
 }

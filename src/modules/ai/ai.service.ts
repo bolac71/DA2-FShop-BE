@@ -330,6 +330,64 @@ export class AiService {
     }
   }
 
+  async virtualTryonOutfit(
+    personBuffer: Buffer,
+    garmentSheetBuffer: Buffer,
+    prompt: string,
+  ): Promise<Buffer> {
+    try {
+      const formData = new FormData();
+      formData.append('person_image', new Blob([new Uint8Array(personBuffer)]), 'person.jpg');
+      formData.append('garment_sheet', new Blob([new Uint8Array(garmentSheetBuffer)]), 'garment-sheet.jpg');
+      formData.append('prompt', prompt);
+
+      this.logger.debug(`Sending Gemini outfit try-on request to AI service: ${this.aiServiceUrl}/tryon/gemini-outfit`);
+
+      const response = await fetch(`${this.aiServiceUrl}/tryon/gemini-outfit`, {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(150000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`AI service returned status ${response.status}: ${errorText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Gemini outfit try-on failed: ${errorMessage}`);
+
+      if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
+        throw new HttpException(
+          'Gemini outfit preview timeout. Please try again with a clearer photo or fewer products.',
+          HttpStatus.GATEWAY_TIMEOUT,
+        );
+      }
+
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+        throw new HttpException(
+          'AI service is currently unavailable. Please try again later.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+
+      if (errorMessage.includes('status 429') || errorMessage.includes('RESOURCE_EXHAUSTED') || errorMessage.includes('quota')) {
+        throw new HttpException(
+          'Gemini image quota/rate limit exceeded. Please check Google AI Studio billing/quota or try again later.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      throw new HttpException(
+        `Gemini outfit preview failed: ${errorMessage}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
   async transcribeVoice(
     fileBuffer: Buffer,
     fileName: string,
