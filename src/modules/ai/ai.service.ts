@@ -24,6 +24,11 @@ export interface AiChatProductItem {
   category?: string;
   brand?: string;
   category_department?: string;
+  colors?: string[];
+  sizes?: string[];
+  averageRating?: number;
+  reviewCount?: number;
+  soldQuantity?: number;
 }
 
 export interface AiChatResponse {

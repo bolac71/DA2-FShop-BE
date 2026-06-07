@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type { AiChatProductItem } from '../ai/ai.service';
 import { AiService } from '../ai/ai.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import type { ImageSearchResultDto } from '../products/dtos';
 import { Product } from '../products/entities/product.entity';
 import { User } from '../users/entities/user.entity';
@@ -21,6 +22,7 @@ export class AiChatbotService {
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
     private readonly aiService: AiService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async createSession(userId: number, dto: CreateAiChatSessionDto) {
@@ -145,10 +147,13 @@ export class AiChatbotService {
     };
   }
 
-  async imageSearch(userId: number, sessionId: number, fileBuffer: Buffer, fileName: string, clientImageUri?: string) {
+  async imageSearch(userId: number, sessionId: number, fileBuffer: Buffer, fileName: string) {
     const session = await this.getOwnedSession(userId, sessionId);
 
-    const rawResults = await this.aiService.searchByImage(fileBuffer, fileName, 8);
+    const [rawResults, uploadedImage] = await Promise.all([
+      this.aiService.searchByImage(fileBuffer, fileName, 8),
+      this.cloudinaryService.uploadBufferToFolder(fileBuffer, 'ai-chatbot/images'),
+    ]);
     const products = await this.enrichProducts(rawResults);
 
     const userMessage = await this.messageRepo.save(
@@ -159,7 +164,8 @@ export class AiChatbotService {
         products: null,
         metadata: {
           mediaType: 'image',
-          imageUri: clientImageUri,
+          imageUri: uploadedImage.secure_url,
+          imagePublicId: uploadedImage.public_id,
           fileName,
         },
         latencyMs: null,
@@ -214,7 +220,7 @@ export class AiChatbotService {
     const ids = rawResults.map((r) => r.product_id);
     const dbProducts = await this.productRepo.find({
       where: { id: In(ids), isActive: true },
-      relations: ['brand', 'category', 'images'],
+      relations: ['brand', 'category', 'images', 'variants', 'variants.color', 'variants.size'],
     });
 
     const productMap = new Map(dbProducts.map((p) => [p.id, p]));
@@ -223,14 +229,26 @@ export class AiChatbotService {
       .flatMap((r) => {
         const p = productMap.get(r.product_id);
         if (!p) return [];
+        const activeVariants = p.variants?.filter((variant) => variant.isActive) ?? [];
+        const colors = Array.from(
+          new Set(activeVariants.map((variant) => variant.color?.name).filter(Boolean) as string[]),
+        );
+        const sizes = Array.from(
+          new Set(activeVariants.map((variant) => variant.size?.name).filter(Boolean) as string[]),
+        );
+        const categoryName = p.category?.name;
         const item: AiChatProductItem = {
           id: p.id,
           name: p.name,
           price: Number(p.price),
           image_url: p.images?.find((img) => img.isActive)?.imageUrl ?? r.image_url,
-          category: p.category?.name,
+          category: categoryName,
           brand: p.brand?.name,
           category_department: p.category?.department,
+          colors,
+          sizes,
+          averageRating: Number(p.averageRating ?? 0),
+          reviewCount: Number(p.reviewCount ?? 0),
         };
         return [item];
       });
