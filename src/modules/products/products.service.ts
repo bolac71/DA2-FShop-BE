@@ -199,8 +199,8 @@ export class ProductsService {
 
     // Filter images and variants by isActive and add stats
     const processedData = data.map((product) => ({
-      ...getBestCouponForProduct(product, publicCoupons),
       ...product,
+      ...getBestCouponForProduct(product, publicCoupons),
       images: product.images?.filter((img) => img.isActive) ?? [],
       variants: product.variants?.filter((v) => v.isActive) ?? [],
       averageRating: product.averageRating || 0,
@@ -269,9 +269,12 @@ export class ProductsService {
       0,
     );
 
+    const publicCoupons = await this.couponsService.getPublicActiveCoupons();
+
     // Filter images and variants by isActive, add stock/sold quantity
     return {
       ...product,
+      ...getBestCouponForProduct(product, publicCoupons),
       images: product.images?.filter((img) => img.isActive) ?? [],
       soldQuantity: totalSoldQuantity,
       variants: processedVariants,
