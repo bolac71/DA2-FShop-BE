@@ -14,6 +14,9 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Res,
+
+  NotFoundException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { UseGuards } from '@nestjs/common';
@@ -27,11 +30,16 @@ import {
   ImageSearchDto,
   ImageSearchResultDto,
   ProductQueryDto,
+  UpdateProductFullDto,
   UpdateProductTryonAssetDto,
   VoiceSearchResponseDto,
   VoiceTranscriptionResponseDto,
 } from './dtos';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { MinioService } from '../minio/minio.service';
+import { SkipTransform } from 'src/decorators/skip-transform.decorator';
+import type { Response } from 'express';
+import { randomUUID } from 'node:crypto';
 
 import { InteractionInterceptor } from '../user-interactions/interaction.interceptor';
 
@@ -42,6 +50,7 @@ export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly minioService: MinioService,
   ) {}
 
   @Post()
@@ -200,6 +209,74 @@ export class ProductsController {
     return this.productsService.removeTryonAsset(id, assetId);
   }
 
+  @Get('tryon-effects/:encodedKey')
+  @SkipTransform()
+  @ApiOperation({ summary: 'Stream a stored DeepAR effect file' })
+  async streamTryonEffect(
+    @Param('encodedKey') encodedKey: string,
+    @Res() response: Response,
+  ) {
+    // CORS is handled by the global enableCors() middleware in main.ts.
+    // Do NOT manually set Access-Control-Allow-Origin here — overriding with '*'
+    // conflicts with the global Allow-Credentials: true header and causes browser rejections.
+    const key = this.decodeStorageKey(encodedKey);
+    const file = await this.getTryonEffectFileStream(key);
+
+    response.setHeader('Content-Type', file.contentType || 'application/octet-stream');
+    response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    if (file.contentLength) {
+      response.setHeader('Content-Length', String(file.contentLength));
+    }
+
+    file.body.pipe(response);
+  }
+
+  @Patch(':id/full')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'productImages', maxCount: 10 },
+      { name: 'variantImages', maxCount: 100 },
+    ]),
+  )
+  @ApiOperation({ summary: 'Update product with images and variants' })
+  async updateFull(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateProductDto: UpdateProductFullDto,
+    @UploadedFiles()
+    files?: {
+      productImages?: Express.Multer.File[];
+      variantImages?: Express.Multer.File[];
+    },
+  ) {
+    const productImages: Array<{ imageUrl: string; publicId: string }> = [];
+    if (files?.productImages?.length) {
+      for (const file of files.productImages) {
+        this.assertImageFile(file);
+        const uploaded = await this.cloudinaryService.uploadFile(file);
+        productImages.push({
+          imageUrl: uploaded?.secure_url || '',
+          publicId: uploaded?.public_id || '',
+        });
+      }
+    }
+
+    const variantImagesMap: Record<number, { imageUrl: string; publicId: string }> = {};
+    if (files?.variantImages?.length) {
+      for (let i = 0; i < files.variantImages.length; i++) {
+        const file = files.variantImages[i];
+        this.assertImageFile(file);
+        const uploaded = await this.cloudinaryService.uploadFile(file);
+        variantImagesMap[i] = {
+          imageUrl: uploaded?.secure_url || '',
+          publicId: uploaded?.public_id || '',
+        };
+      }
+    }
+
+    return this.productsService.updateFull(id, updateProductDto, productImages, variantImagesMap);
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
   @UseInterceptors(InteractionInterceptor)
@@ -246,24 +323,12 @@ export class ProductsController {
 
     if (effectFile) {
       this.assertDeepAREffectFile(effectFile);
-      const uploaded = await this.cloudinaryService.uploadFileToFolder(
-        effectFile,
-        'tryon/effects',
-        'raw',
-      );
-      if (!uploaded || !('secure_url' in uploaded) || !uploaded.secure_url) {
-        throw new BadRequestException('Failed to upload DeepAR effect file');
-      }
-      payload.deeparEffectUrl = uploaded.secure_url;
+      payload.deeparEffectUrl = await this.uploadDeepAREffectFile(effectFile);
     }
 
     if (thumbnailFile) {
       this.assertImageFile(thumbnailFile);
-      const uploaded = await this.cloudinaryService.uploadFileToFolder(
-        thumbnailFile,
-        'tryon/thumbnails',
-        'image',
-      );
+      const uploaded = await this.uploadTryonFile(thumbnailFile, 'tryon/thumbnails', 'image', 'try-on thumbnail');
       if (!uploaded || !('secure_url' in uploaded) || !uploaded.secure_url) {
         throw new BadRequestException('Failed to upload try-on thumbnail');
       }
@@ -273,8 +338,91 @@ export class ProductsController {
     return payload;
   }
 
+  private async uploadTryonFile(
+    file: Express.Multer.File,
+    folder: string,
+    resourceType: 'image' | 'video' | 'raw' | 'auto',
+    label: string,
+  ) {
+    try {
+      return await this.cloudinaryService.uploadFileToFolder(file, folder, resourceType);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Failed to upload ${label}: ${message}`);
+    }
+  }
+
+  private async getTryonEffectFileStream(key: string) {
+    try {
+      return await this.minioService.getFileStream(key);
+    } catch (error) {
+      if (!(error instanceof NotFoundException) || !key.startsWith('tryon/effects/')) {
+        throw error;
+      }
+
+      const legacyRootKey = key.split('/').pop();
+      if (!legacyRootKey) {
+        throw error;
+      }
+
+      return this.minioService.getFileStream(legacyRootKey);
+    }
+  }
+
+  private async uploadDeepAREffectFile(file: Express.Multer.File) {
+    const cloudinaryRawMaxSizeMb = Number(process.env.CLOUDINARY_RAW_MAX_MB || 10);
+    const cloudinaryRawMaxSize = cloudinaryRawMaxSizeMb * 1024 * 1024;
+
+    if (file.size <= cloudinaryRawMaxSize) {
+      const uploaded = await this.uploadTryonFile(file, 'tryon/effects', 'raw', 'DeepAR effect file');
+      if (!uploaded || !('secure_url' in uploaded) || !uploaded.secure_url) {
+        throw new BadRequestException('Failed to upload DeepAR effect file');
+      }
+      return uploaded.secure_url;
+    }
+
+    const storageKey = this.buildTryonEffectStorageKey(file.originalname);
+    try {
+      await this.minioService.uploadBuffer(
+        storageKey,
+        file.buffer,
+        file.mimetype || 'application/octet-stream',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Failed to upload DeepAR effect file to object storage: ${message}`);
+    }
+
+    return `/api/v1/products/tryon-effects/${this.encodeStorageKey(storageKey)}`;
+  }
+
+  private buildTryonEffectStorageKey(originalName: string) {
+    const safeName = originalName
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'effect.deepar';
+    return `tryon/effects/${randomUUID()}-${safeName}`;
+  }
+
+  private encodeStorageKey(key: string) {
+    return Buffer.from(key, 'utf8').toString('base64url');
+  }
+
+  private decodeStorageKey(encodedKey: string) {
+    try {
+      const key = Buffer.from(encodedKey, 'base64url').toString('utf8');
+      if (!key.startsWith('tryon/effects/')) {
+        throw new Error('Invalid DeepAR effect key');
+      }
+      return key;
+    } catch {
+      throw new BadRequestException('Invalid DeepAR effect key');
+    }
+  }
+
   private assertDeepAREffectFile(file: Express.Multer.File) {
-    const maxSize = 25 * 1024 * 1024;
+    const maxSizeMb = Number(process.env.DEEPAR_EFFECT_MAX_MB || 50);
+    const maxSize = maxSizeMb * 1024 * 1024;
     const fileName = file.originalname.toLowerCase();
     const allowedMimeTypes = new Set([
       'application/octet-stream',
@@ -283,7 +431,7 @@ export class ProductsController {
     ]);
 
     if (file.size > maxSize) {
-      throw new BadRequestException('DeepAR effect file must not exceed 25MB');
+      throw new BadRequestException(`DeepAR effect file must not exceed ${maxSizeMb}MB`);
     }
 
     if (!fileName.endsWith('.deepar') && !allowedMimeTypes.has(file.mimetype)) {

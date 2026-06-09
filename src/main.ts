@@ -19,6 +19,16 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Accept',
+      'Authorization',
+      'ngrok-skip-browser-warning',
+      'X-Requested-With',
+    ],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
   // swagger
   const config = new DocumentBuilder()

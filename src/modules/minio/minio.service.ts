@@ -90,6 +90,64 @@ export class MinioService implements OnModuleInit {
     }
   }
 
+  async uploadBuffer(
+    fileName: string,
+    buffer: Buffer,
+    contentType?: string,
+  ): Promise<void> {
+    try {
+      await this.minioClient.send(
+        new PutObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileName,
+          Body: buffer,
+          ContentLength: buffer.length,
+          ContentType: contentType,
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to upload buffer "${fileName}" to storage: ${this.describeS3Error(error)}`,
+      );
+      throw new HttpException(
+        'Failed to upload file to storage',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async getFileStream(fileName: string) {
+    try {
+      const response = await this.minioClient.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileName,
+        }),
+      );
+
+      if (!response.Body) {
+        throw new Error('Empty download response body');
+      }
+
+      return {
+        body: this.toReadableStream(response.Body as S3Body),
+        contentType: response.ContentType,
+        contentLength: response.ContentLength,
+      };
+    } catch (error: unknown) {
+      if (this.isNotFoundError(error)) {
+        throw new NotFoundException(`File ${fileName} not found in storage`);
+      }
+      this.logger.error(
+        `Failed to stream file "${fileName}" from storage: ${this.describeS3Error(error)}`,
+      );
+      throw new HttpException(
+        'Failed to stream file from storage',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   async downloadFile(
     fileName: string,
     destinationPath: string,

@@ -14,6 +14,8 @@ export enum ProductTryonAssetType {
   GLASSES = 'glasses',
   HAT = 'hat',
   ACCESSORY = 'accessory',
+  FOOT = 'foot',
+  WATCH = 'watch',
 }
 
 @Entity('product_tryon_assets')

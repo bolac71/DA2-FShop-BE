@@ -13,6 +13,7 @@ import { InventoryTransaction } from '../inventories/entities/inventory-transact
 import { Inventory } from '../inventories/entities/inventory.entity';
 import { CouponsModule } from '../coupons/coupons.module';
 import { AiModule } from '../ai/ai.module';
+import { MinioModule } from '../minio/minio.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AiModule } from '../ai/ai.module';
     CartItem,
     CouponsModule,
     AiModule,
+    MinioModule,
   ],
   controllers: [ProductsController],
   providers: [ProductsService],

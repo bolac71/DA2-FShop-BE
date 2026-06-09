@@ -1,4 +1,4 @@
-export { CreateProductDto, CreateProductImageDto, CreateProductVariantDto } from './create-product.dto';
+export { CreateProductDto, CreateProductImageDto, CreateProductVariantDto, UpdateProductFullDto, UpdateProductFullVariantDto } from './create-product.dto';
 export { ImageSearchDto, ImageSearchResultDto } from './image-search.dto';
 export { ProductQueryDto } from './product-query.dto';
 export { VoiceSearchResponseDto, VoiceTranscriptionResponseDto } from './voice-search.dto';

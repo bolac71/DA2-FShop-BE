@@ -1,7 +1,37 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsUrl } from 'class-validator';
+import { IsEnum, IsOptional, IsUrl, ValidateBy, ValidationOptions } from 'class-validator';
 import { BooleanOptional, NumberOptional, StringOptional, StringRequired } from 'src/decorators/dto.decorator';
 import { ProductTryonAssetType } from '../entities/product-tryon-asset.entity';
+
+const isDeepAREffectLocation = (value: unknown) => {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.startsWith('/api/v1/products/tryon-effects/')) {
+    return true;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const IsDeepAREffectLocation = (validationOptions?: ValidationOptions) =>
+  ValidateBy(
+    {
+      name: 'isDeepAREffectLocation',
+      validator: {
+        validate: isDeepAREffectLocation,
+        defaultMessage: () => 'DeepAR effect URL must be a valid URL or internal effect path',
+      },
+    },
+    validationOptions,
+  );
 
 export class CreateProductTryonAssetDto {
   @IsOptional()
@@ -10,7 +40,7 @@ export class CreateProductTryonAssetDto {
   variantId?: number;
 
   @IsEnum(ProductTryonAssetType, {
-    message: 'Asset type must be one of: glasses, hat, accessory',
+    message: 'Asset type must be one of: glasses, hat, accessory, foot, watch',
   })
   @ApiProperty({ enum: ProductTryonAssetType, example: ProductTryonAssetType.GLASSES })
   assetType: ProductTryonAssetType;
@@ -20,7 +50,7 @@ export class CreateProductTryonAssetDto {
   displayName: string;
 
   @IsOptional()
-  @IsUrl({ require_protocol: true }, { message: 'DeepAR effect URL must be a valid URL' })
+  @IsDeepAREffectLocation()
   @StringOptional()
   @ApiProperty({ required: false, example: 'https://cdn.example.com/effects/glasses.deepar' })
   deeparEffectUrl?: string;
@@ -45,7 +75,7 @@ export class UpdateProductTryonAssetDto {
 
   @IsOptional()
   @IsEnum(ProductTryonAssetType, {
-    message: 'Asset type must be one of: glasses, hat, accessory',
+    message: 'Asset type must be one of: glasses, hat, accessory, foot, watch',
   })
   @ApiProperty({ enum: ProductTryonAssetType, required: false })
   assetType?: ProductTryonAssetType;
@@ -55,7 +85,7 @@ export class UpdateProductTryonAssetDto {
   displayName?: string;
 
   @IsOptional()
-  @IsUrl({ require_protocol: true }, { message: 'DeepAR effect URL must be a valid URL' })
+  @IsDeepAREffectLocation()
   @ApiProperty({ required: false, example: 'https://cdn.example.com/effects/glasses.deepar' })
   deeparEffectUrl?: string;
 

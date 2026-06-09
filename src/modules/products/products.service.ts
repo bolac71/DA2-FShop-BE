@@ -6,7 +6,7 @@ import { Product } from './entities/product.entity';
 import { ProductImage } from './entities/product-image.entity';
 import { ProductVariant } from './entities/product-variant.entity';
 import { ProductTryonAsset } from './entities/product-tryon-asset.entity';
-import { CreateProductDto, CreateProductTryonAssetDto, ImageSearchResultDto, ProductQueryDto, UpdateProductTryonAssetDto, VoiceSearchResponseDto, VoiceTranscriptionResponseDto } from './dtos';
+import { CreateProductDto, CreateProductTryonAssetDto, ImageSearchResultDto, ProductQueryDto, UpdateProductFullDto, UpdateProductFullVariantDto, UpdateProductTryonAssetDto, VoiceSearchResponseDto, VoiceTranscriptionResponseDto } from './dtos';
 import { BrandsService } from '../brands/brands.service';
 import { CategoriesService } from '../categories/categories.service';
 import { ColorsService } from '../colors/colors.service';
@@ -146,6 +146,206 @@ export class ProductsService {
 
       return savedProduct;
     });
+  }
+
+  async updateFull(
+    id: number,
+    dto: UpdateProductFullDto,
+    productImages: Array<{ imageUrl: string; publicId: string }> = [],
+    variantImagesMap: Record<number, { imageUrl: string; publicId: string }> = {},
+  ) {
+    const keepImageIds = this.normalizeNumberArray(dto.keepImageIds);
+    const removeVariantIds = this.normalizeNumberArray(dto.removeVariantIds);
+    const variants = this.normalizeVariantArray(dto.variants);
+
+    await this.ensureActiveProduct(id);
+
+    if (dto.brandId !== undefined) {
+      await this.brandsService.getById(Number(dto.brandId));
+    }
+
+    if (dto.categoryId !== undefined) {
+      await this.categoriesService.getById(Number(dto.categoryId));
+    }
+
+    for (const variant of variants) {
+      await this.colorsService.findOne(Number(variant.colorId));
+      await this.sizesService.findOne(Number(variant.sizeId));
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      const product = await manager.findOne(Product, {
+        where: { id, isActive: true },
+        relations: ['images', 'variants'],
+      });
+
+      if (!product) {
+        throw new HttpException(`Product with id ${id} not found`, HttpStatus.NOT_FOUND);
+      }
+
+      if (dto.name !== undefined) {
+        const name = dto.name.trim();
+        if (!name) {
+          throw new HttpException('Product name can not be empty', HttpStatus.BAD_REQUEST);
+        }
+        product.name = name;
+      }
+
+      if (dto.description !== undefined) {
+        product.description = dto.description;
+      }
+
+      if (dto.brandId !== undefined) {
+        product.brandId = Number(dto.brandId);
+      }
+
+      if (dto.categoryId !== undefined) {
+        product.categoryId = Number(dto.categoryId);
+      }
+
+      if (dto.price !== undefined) {
+        const price = Number(dto.price);
+        if (!Number.isFinite(price) || price < 0) {
+          throw new HttpException('Product price must be a valid positive number', HttpStatus.BAD_REQUEST);
+        }
+        product.price = price;
+      }
+
+      if (dto.isActive !== undefined) {
+        product.isActive = this.normalizeBoolean(dto.isActive);
+      }
+
+      await manager.save(product);
+
+      if (dto.keepImageIds !== undefined) {
+        const activeImages = product.images?.filter((image) => image.isActive) ?? [];
+        const invalidKeepImageIds = keepImageIds.filter((imageId) => !activeImages.some((image) => image.id === imageId));
+        if (invalidKeepImageIds.length > 0) {
+          throw new HttpException(
+            `Image ids do not belong to product ${id}: ${invalidKeepImageIds.join(', ')}`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        const removeImageIds = activeImages
+          .filter((image) => !keepImageIds.includes(image.id))
+          .map((image) => image.id);
+
+        if (removeImageIds.length > 0) {
+          await manager.update(ProductImage, { id: In(removeImageIds), productId: id }, { isActive: false });
+        }
+      }
+
+      if (productImages.length > 0) {
+        const newImages = productImages.map((image) =>
+          manager.create(ProductImage, {
+            productId: id,
+            imageUrl: image.imageUrl,
+            publicId: image.publicId,
+          }),
+        );
+        await manager.save(newImages);
+      }
+
+      if (removeVariantIds.length > 0) {
+        const existingRemoveVariants = await manager.find(ProductVariant, {
+          where: { id: In(removeVariantIds), productId: id },
+        });
+        if (existingRemoveVariants.length !== removeVariantIds.length) {
+          throw new HttpException('One or more variants do not belong to this product', HttpStatus.BAD_REQUEST);
+        }
+        await manager.update(ProductVariant, { id: In(removeVariantIds), productId: id }, { isActive: false });
+      }
+
+      if (variants.length > 0) {
+        const activeVariants = await manager.find(ProductVariant, {
+          where: { productId: id, isActive: true },
+        });
+        const variantsById = new Map(activeVariants.map((variant) => [variant.id, variant]));
+        const nextSignatures = new Map<string, number | 'new'>();
+        const incomingSignatures = new Set<string>();
+
+        for (const activeVariant of activeVariants) {
+          if (!removeVariantIds.includes(activeVariant.id)) {
+            nextSignatures.set(`${activeVariant.colorId}-${activeVariant.sizeId}`, activeVariant.id);
+          }
+        }
+
+        for (const variant of variants) {
+          const colorId = Number(variant.colorId);
+          const sizeId = Number(variant.sizeId);
+          const signature = `${colorId}-${sizeId}`;
+          if (incomingSignatures.has(signature)) {
+            throw new HttpException(
+              `Duplicate variant with colorId ${colorId} and sizeId ${sizeId}`,
+              HttpStatus.CONFLICT,
+            );
+          }
+          incomingSignatures.add(signature);
+
+          const existingSignatureOwner = nextSignatures.get(signature);
+
+          if (existingSignatureOwner !== undefined && existingSignatureOwner !== (variant.id ?? 'new')) {
+            throw new HttpException(
+              `Duplicate variant with colorId ${colorId} and sizeId ${sizeId}`,
+              HttpStatus.CONFLICT,
+            );
+          }
+
+          let entity: ProductVariant;
+          if (variant.id) {
+            const existingVariant = variantsById.get(Number(variant.id));
+            if (!existingVariant) {
+              throw new HttpException(
+                `Variant with id ${variant.id} does not belong to active product ${id}`,
+                HttpStatus.BAD_REQUEST,
+              );
+            }
+            entity = existingVariant;
+            nextSignatures.delete(`${entity.colorId}-${entity.sizeId}`);
+          } else {
+            entity = manager.create(ProductVariant, { productId: id });
+          }
+
+          const duplicateVariant = await manager.findOne(ProductVariant, {
+            where: { productId: id, colorId, sizeId },
+          });
+          if (duplicateVariant && duplicateVariant.id !== entity.id) {
+            throw new HttpException(
+              `Variant with colorId ${colorId} and sizeId ${sizeId} already exists for this product`,
+              HttpStatus.CONFLICT,
+            );
+          }
+
+          entity.colorId = colorId;
+          entity.sizeId = sizeId;
+          entity.sku = variant.sku?.trim() || undefined;
+          entity.isActive = true;
+
+          if (variant.removeImage) {
+            entity.imageUrl = undefined;
+            entity.publicId = undefined;
+          }
+
+          if (variant.imageFileIndex !== undefined && variant.imageFileIndex !== null) {
+            const uploadedImage = variantImagesMap[Number(variant.imageFileIndex)];
+            if (!uploadedImage) {
+              throw new HttpException(
+                `Variant image at index ${variant.imageFileIndex} was not uploaded`,
+                HttpStatus.BAD_REQUEST,
+              );
+            }
+            entity.imageUrl = uploadedImage.imageUrl;
+            entity.publicId = uploadedImage.publicId;
+          }
+
+          nextSignatures.set(signature, variant.id ?? 'new');
+          await manager.save(entity);
+        }
+      }
+    });
+
+    return this.findOne(id);
   }
 
   async findAll(query: ProductQueryDto) {
@@ -443,6 +643,68 @@ export class ProductsService {
 
     // Forward request to AI service
     return await this.aiService.searchByImage(fileBuffer, fileName, topK);
+  }
+
+  private normalizeNumberArray(value?: unknown): number[] {
+    if (value === undefined || value === null || value === '') {
+      return [];
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value;
+    } catch {
+      throw new HttpException('Expected a valid JSON array of numbers', HttpStatus.BAD_REQUEST);
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new HttpException('Expected an array of numbers', HttpStatus.BAD_REQUEST);
+    }
+
+    return parsed
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item));
+  }
+
+  private normalizeVariantArray(value?: unknown): UpdateProductFullVariantDto[] {
+    if (value === undefined || value === null || value === '') {
+      return [];
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value;
+    } catch {
+      throw new HttpException('Expected variants to be a valid JSON array', HttpStatus.BAD_REQUEST);
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new HttpException('Expected variants to be an array', HttpStatus.BAD_REQUEST);
+    }
+
+    return parsed.map((item) => {
+      const variant = item as Record<string, unknown>;
+      const colorId = Number(variant.colorId);
+      const sizeId = Number(variant.sizeId);
+      if (!Number.isFinite(colorId) || !Number.isFinite(sizeId)) {
+        throw new HttpException('Variant colorId and sizeId are required', HttpStatus.BAD_REQUEST);
+      }
+
+      return {
+        id: variant.id !== undefined && variant.id !== null ? Number(variant.id) : undefined,
+        sku: typeof variant.sku === 'string' ? variant.sku : undefined,
+        colorId,
+        sizeId,
+        imageFileIndex: variant.imageFileIndex !== undefined && variant.imageFileIndex !== null
+          ? Number(variant.imageFileIndex)
+          : undefined,
+        removeImage: this.normalizeBoolean(variant.removeImage),
+      };
+    });
+  }
+
+  private normalizeBoolean(value: unknown): boolean {
+    return value === true || value === 'true' || value === '1' || value === 1;
   }
 
   private async ensureActiveProduct(productId: number) {
