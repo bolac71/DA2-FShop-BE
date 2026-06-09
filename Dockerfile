@@ -25,6 +25,7 @@ COPY --from=builder /app/dist ./dist
 
 RUN apk add --no-cache curl
 RUN addgroup -S nodejs && adduser -S nestjs -G nodejs
+RUN mkdir -p /app/temp && chown nestjs:nodejs /app/temp
 
 USER nestjs
 

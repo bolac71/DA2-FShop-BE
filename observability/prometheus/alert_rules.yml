@@ -1,0 +1,47 @@
+groups:
+  - name: fshop-backend
+    rules:
+      - alert: HighErrorRate
+        expr: rate(fshop_backend_http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "FShop error rate vượt ngưỡng 5%"
+          description: "5xx error rate hiện tại là {{ printf \"%.2f\" $value }} req/s trong 2 phút."
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(fshop_backend_http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "FShop p95 latency vượt 1 giây"
+          description: "p95 latency hiện tại là {{ printf \"%.2f\" $value }}s — kiểm tra DB queries và Redis cache."
+
+      - alert: HighLatencyCritical
+        expr: histogram_quantile(0.95, rate(fshop_backend_http_request_duration_seconds_bucket[5m])) > 3
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "FShop p95 latency vượt 3 giây — nghiêm trọng"
+          description: "p95 latency hiện tại là {{ printf \"%.2f\" $value }}s."
+
+      - alert: BackendDown
+        expr: up{job="fshop-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "FShop backend service bị down"
+          description: "Không scrape được metrics từ backend trong hơn 1 phút."
+
+      - alert: HighRequestRate
+        expr: rate(fshop_backend_http_requests_total[1m]) > 100
+        for: 2m
+        labels:
+          severity: info
+        annotations:
+          summary: "FShop request rate cao bất thường (> 100 req/s)"
+          description: "Request rate hiện tại: {{ printf \"%.0f\" $value }} req/s."
