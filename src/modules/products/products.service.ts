@@ -800,8 +800,7 @@ export class ProductsService {
     }
     const garmentBuffer = Buffer.from(await garmentResponse.arrayBuffer());
 
-    const SLOT_TO_OOTD: Record<string, 'Upper-body' | 'Lower-body' | 'Dress'> = {
-      top: 'Upper-body',
+    const SLOT_TO_OOTD: Record<string, 'Lower-body' | 'Dress'> = {
       bottom: 'Lower-body',
       dress: 'Dress',
     };
@@ -810,9 +809,10 @@ export class ProductsService {
 
     let resultBuffer: Buffer;
     if (ootdCategory) {
+      // Lower-body & Dress → OOTDiffusion (hỗ trợ tốt hơn IDM-VTON)
       resultBuffer = await this.aiService.virtualTryonOOTD(personFile.buffer, garmentBuffer, ootdCategory);
     } else {
-      // Fallback to IDM-VTON for products without a clothing slot type
+      // Upper-body (top) và fallback → IDM-VTON (chất lượng tốt hơn cho áo)
       resultBuffer = await this.aiService.virtualTryon(personFile.buffer, garmentBuffer, garmentDesc ?? product.name);
     }
 

@@ -1,7 +1,7 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { ILike, In, Not, Repository } from 'typeorm';
+import { ILike, In, Repository } from 'typeorm';
 import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
 import { RtcRole, RtcTokenBuilder } from 'agora-token';
@@ -12,6 +12,7 @@ import {
   QueryLivestreamDto,
   UpdateLivestreamDto,
   AddLivestreamProductsBatchDto,
+  CreatePollDto,
 } from './dtos';
 import {
   Livestream,
@@ -19,6 +20,15 @@ import {
   LivestreamOrder,
   LivestreamProduct,
 } from './entities';
+import { LivestreamPoll, PollResult } from './entities/livestream-poll.entity';
+import { LivestreamPollVote } from './entities/livestream-poll-vote.entity';
+
+export type PollVoteResult = {
+  pollId: number;
+  livestreamId: number;
+  options: Array<{ index: number; text: string; count: number; percentage: number }>;
+  totalVotes: number;
+};
 import { LivestreamStatus, NotificationType, Role } from 'src/constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Product } from '../products/entities/product.entity';
@@ -47,6 +57,10 @@ export class LivestreamsService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(LivestreamPoll)
+    private readonly pollRepository: Repository<LivestreamPoll>,
+    @InjectRepository(LivestreamPollVote)
+    private readonly pollVoteRepository: Repository<LivestreamPollVote>,
     @InjectRedis()
     private readonly redis: Redis,
     private readonly configService: ConfigService,
@@ -342,12 +356,38 @@ export class LivestreamsService {
   async getComments(livestreamId: number, query: QueryLivestreamDto) {
     await this.ensureLivestreamExists(livestreamId);
     const { page, limit, sortOrder = 'DESC' } = query;
-    const [data, total] = await this.livestreamCommentRepository.findAndCount({
-      where: { livestreamId, isActive: true, moderationStatus: Not(In(['flagged', 'rejected'])) },
-      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { createdAt: sortOrder },
-      relations: ['user'],
-    });
+    const qb = this.livestreamCommentRepository
+      .createQueryBuilder('comment')
+      .leftJoinAndSelect('comment.user', 'user')
+      .where('comment.livestreamId = :livestreamId', { livestreamId })
+      .andWhere('comment.isActive = :isActive', { isActive: true })
+      .andWhere('comment.moderationStatus != :hiddenStatus', { hiddenStatus: 'rejected' })
+      .andWhere((qb) => {
+        const flaggedLogSubQuery = qb
+          .subQuery()
+          .select('1')
+          .from('moderation_logs', 'log')
+          .where('log.content_type = :commentContentType')
+          .andWhere('log.content_id = comment.id')
+          .andWhere('log.decision = :flaggedDecision')
+          .andWhere('log.priority = :hiddenPriority')
+          .andWhere('log.is_overridden = false')
+          .getQuery();
+
+        return `NOT EXISTS ${flaggedLogSubQuery}`;
+      })
+      .setParameters({
+        commentContentType: 'livestream_comment',
+        flaggedDecision: 'flagged',
+        hiddenPriority: 'HIGH',
+      })
+      .orderBy('comment.createdAt', sortOrder);
+
+    if (page && limit) {
+      qb.take(limit).skip((page - 1) * limit);
+    }
+
+    const [data, total] = await qb.getManyAndCount();
 
     return {
       pagination: {
@@ -386,9 +426,19 @@ export class LivestreamsService {
       throw new HttpException('Comment not found', HttpStatus.NOT_FOUND);
     }
 
-    this.moderationService
+    const moderationStatus = await this.moderationService
       .moderateContent(dto.content, 'livestream_comment', hydratedComment.id, userId)
-      .catch((err: Error) => this.logger.warn(`Livestream comment moderation failed: ${err.message}`));
+      .catch((err: Error) => {
+        this.logger.warn(`Livestream comment moderation failed: ${err.message}`);
+        return null;
+      });
+
+    if (moderationStatus === 'rejected') {
+      throw new HttpException(
+        'Bình luận của bạn đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
 
     return hydratedComment;
   }
@@ -489,10 +539,12 @@ export class LivestreamsService {
       relations: [
         'pinnedProducts',
         'pinnedProducts.product',
+        'pinnedProducts.product.images',
         'livestreamOrders',
         'livestreamOrders.order',
         'livestreamOrders.order.items',
         'livestreamOrders.order.items.variant',
+        'livestreamOrders.order.items.variant.product',
       ],
     });
 
@@ -570,6 +622,169 @@ export class LivestreamsService {
       totalRevenue,
       topProducts,
     };
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // LIVE POLL
+  // ──────────────────────────────────────────────────────────
+
+  async createPoll(livestreamId: number, dto: CreatePollDto): Promise<LivestreamPoll> {
+    const livestream = await this.livestreamRepository.findOneBy({ id: livestreamId, isActive: true });
+    if (!livestream) throw new HttpException('Livestream not found', HttpStatus.NOT_FOUND);
+    if (livestream.status !== LivestreamStatus.LIVE) {
+      throw new HttpException('Poll can only be created during a live stream', HttpStatus.BAD_REQUEST);
+    }
+
+    // Close any existing active poll for this livestream
+    const existing = await this.pollRepository.findOne({
+      where: { livestreamId, status: 'active' },
+    });
+    if (existing) {
+      await this.closePoll(existing.id);
+    }
+
+    const poll = this.pollRepository.create({
+      livestreamId,
+      question: dto.question,
+      options: dto.options,
+      status: 'active',
+      totalVotes: 0,
+    });
+    const saved = await this.pollRepository.save(poll);
+
+    // Init Redis vote counts: { "0": 0, "1": 0, ... }
+    const countsKey = this.pollCountsKey(livestreamId, saved.id);
+    const initCounts: Record<string, string> = {};
+    dto.options.forEach((_, i) => { initCounts[String(i)] = '0'; });
+    await this.redis.hset(countsKey, initCounts);
+    await this.redis.set(this.activePollKey(livestreamId), String(saved.id));
+
+    return saved;
+  }
+
+  async submitVote(pollId: number, userId: number, optionIndex: number): Promise<PollVoteResult> {
+    const poll = await this.pollRepository.findOneBy({ id: pollId });
+    if (!poll) throw new HttpException('Poll not found', HttpStatus.NOT_FOUND);
+    if (poll.status !== 'active') throw new HttpException('Poll is already closed', HttpStatus.BAD_REQUEST);
+    if (optionIndex < 0 || optionIndex >= poll.options.length) {
+      throw new HttpException('Invalid option index', HttpStatus.BAD_REQUEST);
+    }
+
+    const votedKey = this.pollVotedKey(poll.livestreamId, pollId);
+
+    // Prevent double-voting
+    const alreadyVoted = await this.redis.sismember(votedKey, String(userId));
+    if (alreadyVoted) throw new HttpException('Bạn đã bình chọn rồi', HttpStatus.CONFLICT);
+
+    // Mark voted in Redis (before DB to prevent race condition)
+    await this.redis.sadd(votedKey, String(userId));
+
+    // Save to DB (fire-and-forget errors are logged, not thrown)
+    this.pollVoteRepository.save({ pollId, userId, optionIndex }).catch((err) => {
+      this.logger.error(`Failed to persist vote pollId=${pollId} userId=${userId}: ${err.message}`);
+    });
+
+    // Increment count in Redis
+    const countsKey = this.pollCountsKey(poll.livestreamId, pollId);
+    await this.redis.hincrby(countsKey, String(optionIndex), 1);
+
+    // Recalculate
+    return this.buildPollVoteResult(poll, countsKey);
+  }
+
+  async closePoll(pollId: number): Promise<LivestreamPoll> {
+    const poll = await this.pollRepository.findOneBy({ id: pollId });
+    if (!poll) throw new HttpException('Poll not found', HttpStatus.NOT_FOUND);
+    if (poll.status === 'closed') return poll;
+
+    const countsKey = this.pollCountsKey(poll.livestreamId, pollId);
+    const rawCounts = await this.redis.hgetall(countsKey);
+
+    let totalVotes = 0;
+    const countMap: Record<number, number> = {};
+    for (const [idx, cnt] of Object.entries(rawCounts)) {
+      const count = parseInt(cnt, 10) || 0;
+      countMap[Number(idx)] = count;
+      totalVotes += count;
+    }
+
+    const results: PollResult[] = poll.options.map((text, i) => {
+      const count = countMap[i] ?? 0;
+      return {
+        optionIndex: i,
+        text,
+        count,
+        percentage: totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0,
+      };
+    });
+
+    poll.status = 'closed';
+    poll.totalVotes = totalVotes;
+    poll.results = results;
+    poll.endedAt = new Date();
+    const saved = await this.pollRepository.save(poll);
+
+    // Cleanup Redis
+    await this.redis.del(countsKey, this.pollVotedKey(poll.livestreamId, pollId));
+    const activePollKey = this.activePollKey(poll.livestreamId);
+    const activePollId = await this.redis.get(activePollKey);
+    if (activePollId === String(pollId)) {
+      await this.redis.del(activePollKey);
+    }
+
+    return saved;
+  }
+
+  async getActivePoll(livestreamId: number): Promise<LivestreamPoll | null> {
+    return this.pollRepository.findOne({
+      where: { livestreamId, status: 'active' },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getPollVoteResult(pollId: number): Promise<PollVoteResult> {
+    const poll = await this.pollRepository.findOneBy({ id: pollId });
+    if (!poll) throw new HttpException('Poll not found', HttpStatus.NOT_FOUND);
+    const countsKey = this.pollCountsKey(poll.livestreamId, pollId);
+    return this.buildPollVoteResult(poll, countsKey);
+  }
+
+  private async buildPollVoteResult(poll: LivestreamPoll, countsKey: string): Promise<PollVoteResult> {
+    const rawCounts = await this.redis.hgetall(countsKey);
+    let totalVotes = 0;
+    const countMap: Record<number, number> = {};
+    for (const [idx, cnt] of Object.entries(rawCounts)) {
+      const count = parseInt(cnt, 10) || 0;
+      countMap[Number(idx)] = count;
+      totalVotes += count;
+    }
+
+    return {
+      pollId: poll.id,
+      livestreamId: poll.livestreamId,
+      options: poll.options.map((text, i) => {
+        const count = countMap[i] ?? 0;
+        return {
+          index: i,
+          text,
+          count,
+          percentage: totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0,
+        };
+      }),
+      totalVotes,
+    };
+  }
+
+  private pollCountsKey(livestreamId: number, pollId: number) {
+    return `livestream:${livestreamId}:poll:${pollId}:counts`;
+  }
+
+  private pollVotedKey(livestreamId: number, pollId: number) {
+    return `livestream:${livestreamId}:poll:${pollId}:voted`;
+  }
+
+  private activePollKey(livestreamId: number) {
+    return `livestream:${livestreamId}:active_poll`;
   }
 
   private async ensureHostAccess(livestreamId: number, hostId: number) {

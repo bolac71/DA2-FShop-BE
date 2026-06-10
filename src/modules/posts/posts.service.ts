@@ -1,6 +1,6 @@
 import { BadRequestException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, EntityManager, ILike, In, IsNull, Not, Repository } from 'typeorm';
+import { Brackets, DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Hashtag, PostComment, PostHashtag, PostImage, PostLike, Post } from './entities';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CreateCommentDto, CreatePostDto, UpdateCommentDto } from './dtos';
@@ -379,7 +379,26 @@ export class PostsService {
       .leftJoinAndSelect('post.postHashtags', 'postHashtags')
       .leftJoinAndSelect('postHashtags.hashtag', 'hashtag')
       .where('post.isActive = :isActive', { isActive: true })
-      .andWhere('post.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
+      .andWhere('post.moderationStatus != :hiddenStatus', { hiddenStatus: 'rejected' })
+      .andWhere((qb) => {
+        const highPriorityLogSubQuery = qb
+          .subQuery()
+          .select('1')
+          .from('moderation_logs', 'log')
+          .where('log.content_type = :postContentType')
+          .andWhere('log.content_id = post.id')
+          .andWhere('log.decision = :flaggedDecision')
+          .andWhere('log.priority = :hiddenPriority')
+          .andWhere('log.is_overridden = false')
+          .getQuery();
+
+        return `NOT EXISTS ${highPriorityLogSubQuery}`;
+      })
+      .setParameters({
+        postContentType: 'post',
+        flaggedDecision: 'flagged',
+        hiddenPriority: 'HIGH',
+      })
       .distinct(true);
 
     if (search?.trim()) {
@@ -571,7 +590,7 @@ export class PostsService {
   }
 
   async addComment(postId: number, userId: number, createCommentDto: CreateCommentDto) {
-    return await this.dataSource.transaction(async (manager) => {
+    const { savedComment, postOwnerId, commenterNameOrEmail } = await this.dataSource.transaction(async (manager) => {
       // 1. Check post
       const post = await manager.findOne(Post, {
         where: {id: postId, isActive: true},
@@ -595,26 +614,48 @@ export class PostsService {
       post.totalComments++;
       await manager.save(post);
 
-      this.moderationService
-        .moderateContent(createCommentDto.content, 'post_comment', savedComment.id, userId)
-        .catch((err: Error) => this.logger.warn(`Comment moderation failed: ${err.message}`));
+      return {
+        savedComment,
+        postOwnerId: post.userId,
+        commenterNameOrEmail: user.fullName || user.email,
+      };
+    });
 
-      if (post.userId !== userId) {
-        try {
-          await this.notificationsService.create({
-            userId: post.userId,
-            type: NotificationType.POST,
-            title: 'Bình luận mới',
-            message: `${user.fullName || user.email} đã bình luận về bài viết của bạn: "${createCommentDto.content}"`,
-            referenceId: post.id,
-          });
-        } catch (err: any) {
-          this.logger.error(`Failed to send comment notification to user ${post.userId}: ${err.message}`);
-        }
+    const moderationStatus = await this.moderationService
+      .moderateContent(createCommentDto.content, 'post_comment', savedComment.id, userId)
+      .catch((err: Error) => {
+        this.logger.warn(`Comment moderation failed: ${err.message}`);
+        return null;
+      });
+
+    if (moderationStatus === 'rejected') {
+      await this.postRepository.decrement({ id: postId }, 'totalComments', 1);
+      throw new HttpException(
+        'Bình luận của bạn đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (postOwnerId !== userId) {
+      try {
+        await this.notificationsService.create({
+          userId: postOwnerId,
+          type: NotificationType.POST,
+          title: 'Bình luận mới',
+          message: `${commenterNameOrEmail} đã bình luận về bài viết của bạn: "${createCommentDto.content}"`,
+          referenceId: postId,
+        });
+      } catch (err: any) {
+        this.logger.error(`Failed to send comment notification to user ${postOwnerId}: ${err.message}`);
       }
+    }
 
-      return plainToInstance(PostComment, savedComment);
-    })
+    const hydratedComment = await this.postCommentRepository.findOne({
+      where: { id: savedComment.id },
+      relations: ['user'],
+    });
+
+    return plainToInstance(PostComment, hydratedComment ?? savedComment);
   }
 
   async getComments(postId: number, query: QueryDto) {
@@ -625,12 +666,39 @@ export class PostsService {
 
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
 
-    const [data, total] = await this.postCommentRepository.findAndCount({
-      where: { postId, isActive: true, parentComment: IsNull(), moderationStatus: Not(In(['flagged', 'rejected'])) },
-      relations: ['user'],
-      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { [sortBy]: sortOrder },
-    })
+    const qb = this.postCommentRepository
+      .createQueryBuilder('comment')
+      .leftJoinAndSelect('comment.user', 'user')
+      .where('comment.postId = :postId', { postId })
+      .andWhere('comment.isActive = :isActive', { isActive: true })
+      .andWhere('comment.parentCommentId IS NULL')
+      .andWhere('comment.moderationStatus != :hiddenStatus', { hiddenStatus: 'rejected' })
+      .andWhere((qb) => {
+        const flaggedLogSubQuery = qb
+          .subQuery()
+          .select('1')
+          .from('moderation_logs', 'log')
+          .where('log.content_type = :commentContentType')
+          .andWhere('log.content_id = comment.id')
+          .andWhere('log.decision = :flaggedDecision')
+          .andWhere('log.priority = :hiddenPriority')
+          .andWhere('log.is_overridden = false')
+          .getQuery();
+
+        return `NOT EXISTS ${flaggedLogSubQuery}`;
+      })
+      .setParameters({
+        commentContentType: 'post_comment',
+        flaggedDecision: 'flagged',
+        hiddenPriority: 'HIGH',
+      })
+      .orderBy(`comment.${sortBy}`, sortOrder);
+
+    if (page && limit) {
+      qb.take(limit).skip((page - 1) * limit);
+    }
+
+    const [data, total] = await qb.getManyAndCount();
 
     const response = {
       pagination: {
@@ -644,7 +712,7 @@ export class PostsService {
   }
 
   async updateComment(commentId: number, userId: number, updateCommentDto: UpdateCommentDto) {
-    return await this.dataSource.transaction(async (manager) => {
+    const savedComment = await this.dataSource.transaction(async (manager) => {
       const comment = await manager.findOne(PostComment, {
         where: { id: commentId},
         relations: ['user', 'post'],
@@ -659,14 +727,24 @@ export class PostsService {
 
       comment.content = updateCommentDto.content;
       comment.moderationStatus = 'pending';
-      const savedComment = await manager.save(comment);
-
-      this.moderationService
-        .moderateContent(updateCommentDto.content, 'post_comment', savedComment.id, userId)
-        .catch((err: Error) => this.logger.warn(`Comment moderation failed: ${err.message}`));
-
-      return { message: 'Comment updated successfully', comment: savedComment };
+      return manager.save(comment);
     });
+
+    const moderationStatus = await this.moderationService
+      .moderateContent(updateCommentDto.content, 'post_comment', savedComment.id, userId)
+      .catch((err: Error) => {
+        this.logger.warn(`Comment moderation failed: ${err.message}`);
+        return null;
+      });
+
+    if (moderationStatus === 'rejected') {
+      throw new HttpException(
+        'Bình luận của bạn đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return { message: 'Comment updated successfully', comment: savedComment };
   }
 
   private async countTotalDescendants(commentId: number, manager: EntityManager): Promise<number> {
@@ -761,7 +839,7 @@ export class PostsService {
   }
 
   async addReply(postId: number, commentId: number, userId: number, dto: CreateCommentDto) {
-    return await this.dataSource.transaction(async (manager) => {
+    const { savedReply, parentCommentUserId, commenterNameOrEmail } = await this.dataSource.transaction(async (manager) => {
       // 1. Check parent comment
       const parentComment = await manager.findOne(PostComment, {
         where: { id: commentId, post: { id: postId } },
@@ -790,10 +868,6 @@ export class PostsService {
 
       const savedReply = await manager.save(reply);
 
-      this.moderationService
-        .moderateContent(dto.content, 'post_comment', savedReply.id, userId)
-        .catch((err: Error) => this.logger.warn(`Reply moderation failed: ${err.message}`));
-
       // 4. Update parent comment replyCount
       parentComment.replyCount += 1;
       await manager.save(parentComment);
@@ -802,22 +876,51 @@ export class PostsService {
       parentComment.post.totalComments += 1;
       await manager.save(parentComment.post);
 
-      if (parentComment.userId && parentComment.userId !== userId) {
-        try {
-          await this.notificationsService.create({
-            userId: parentComment.userId,
-            type: NotificationType.POST,
-            title: 'Phản hồi bình luận',
-            message: `${user.fullName || user.email} đã phản hồi bình luận của bạn: "${dto.content}"`,
-            referenceId: parentComment.post.id,
-          });
-        } catch (err: any) {
-          this.logger.error(`Failed to send reply notification to user ${parentComment.userId}: ${err.message}`);
-        }
-      }
-
-      return savedReply;
+      return {
+        savedReply,
+        parentCommentUserId: parentComment.userId,
+        commenterNameOrEmail: user.fullName || user.email,
+      };
     });
+
+    const moderationStatus = await this.moderationService
+      .moderateContent(dto.content, 'post_comment', savedReply.id, userId)
+      .catch((err: Error) => {
+        this.logger.warn(`Reply moderation failed: ${err.message}`);
+        return null;
+      });
+
+    if (moderationStatus === 'rejected') {
+      await this.dataSource.transaction(async (manager) => {
+        await manager.decrement(PostComment, { id: commentId }, 'replyCount', 1);
+        await manager.decrement(Post, { id: postId }, 'totalComments', 1);
+      });
+      throw new HttpException(
+        'Phản hồi của bạn đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (parentCommentUserId && parentCommentUserId !== userId) {
+      try {
+        await this.notificationsService.create({
+          userId: parentCommentUserId,
+          type: NotificationType.POST,
+          title: 'Phản hồi bình luận',
+          message: `${commenterNameOrEmail} đã phản hồi bình luận của bạn: "${dto.content}"`,
+          referenceId: postId,
+        });
+      } catch (err: any) {
+        this.logger.error(`Failed to send reply notification to user ${parentCommentUserId}: ${err.message}`);
+      }
+    }
+
+    const hydratedReply = await this.postCommentRepository.findOne({
+      where: { id: savedReply.id },
+      relations: ['user'],
+    });
+
+    return hydratedReply ?? savedReply;
   }
 
   async getReplies(postId: number, commentId: number, query: QueryDto) {
@@ -829,12 +932,42 @@ export class PostsService {
     if (!parentComment) throw new HttpException('Parent comment not found', HttpStatus.NOT_FOUND);
 
     const { page, limit, search, sortBy = 'id', sortOrder = 'DESC' } = query;
-    const [data, total] = await this.postCommentRepository.findAndCount({
-      where: { parentComment: { id: commentId }, content: search ? ILike(`%${search}%`) : undefined, isActive: true, moderationStatus: Not(In(['flagged', 'rejected'])) },
-      relations: ['user'],
-      ...(page && limit && { take: limit, skip: (page - 1) * limit }),
-      order: { [sortBy]: sortOrder },
-    })
+    const qb = this.postCommentRepository
+      .createQueryBuilder('comment')
+      .leftJoinAndSelect('comment.user', 'user')
+      .where('comment.parentCommentId = :commentId', { commentId })
+      .andWhere('comment.isActive = :isActive', { isActive: true })
+      .andWhere('comment.moderationStatus != :hiddenStatus', { hiddenStatus: 'rejected' })
+      .andWhere((qb) => {
+        const flaggedLogSubQuery = qb
+          .subQuery()
+          .select('1')
+          .from('moderation_logs', 'log')
+          .where('log.content_type = :commentContentType')
+          .andWhere('log.content_id = comment.id')
+          .andWhere('log.decision = :flaggedDecision')
+          .andWhere('log.priority = :hiddenPriority')
+          .andWhere('log.is_overridden = false')
+          .getQuery();
+
+        return `NOT EXISTS ${flaggedLogSubQuery}`;
+      })
+      .setParameters({
+        commentContentType: 'post_comment',
+        flaggedDecision: 'flagged',
+        hiddenPriority: 'HIGH',
+      })
+      .orderBy(`comment.${sortBy}`, sortOrder);
+
+    if (search) {
+      qb.andWhere('comment.content ILIKE :search', { search: `%${search}%` });
+    }
+
+    if (page && limit) {
+      qb.take(limit).skip((page - 1) * limit);
+    }
+
+    const [data, total] = await qb.getManyAndCount();
     return {
       pagination: {
         total, 

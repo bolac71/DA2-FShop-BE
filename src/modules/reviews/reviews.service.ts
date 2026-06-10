@@ -132,7 +132,26 @@ export class ReviewsService {
       .addSelect('COUNT(r.id)', 'count')
       .where('v.product = :productId', { productId })
       .andWhere('r.isActive = :isActive', { isActive: true })
-      .andWhere('r.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
+      .andWhere('r.moderationStatus != :hiddenStatus', { hiddenStatus: 'rejected' })
+      .andWhere((qb) => {
+        const highPriorityLogSubQuery = qb
+          .subQuery()
+          .select('1')
+          .from('moderation_logs', 'log')
+          .where('log.content_type = :reviewContentType')
+          .andWhere('log.content_id = r.id')
+          .andWhere('log.decision = :flaggedDecision')
+          .andWhere('log.priority = :hiddenPriority')
+          .andWhere('log.is_overridden = false')
+          .getQuery();
+
+        return `NOT EXISTS ${highPriorityLogSubQuery}`;
+      })
+      .setParameters({
+        reviewContentType: 'review',
+        flaggedDecision: 'flagged',
+        hiddenPriority: 'HIGH',
+      })
       .getRawOne();
 
     await manager.update(Product, productId, {
@@ -250,7 +269,26 @@ export class ReviewsService {
       .leftJoinAndSelect('o.items', 'oi', 'oi.variant_id = r.variant_id')
       .where('v.product = :productId', { productId })
       .andWhere('r.isActive = :isActive', { isActive: true })
-      .andWhere('r.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
+      .andWhere('r.moderationStatus != :hiddenStatus', { hiddenStatus: 'rejected' })
+      .andWhere((qb) => {
+        const highPriorityLogSubQuery = qb
+          .subQuery()
+          .select('1')
+          .from('moderation_logs', 'log')
+          .where('log.content_type = :reviewContentType')
+          .andWhere('log.content_id = r.id')
+          .andWhere('log.decision = :flaggedDecision')
+          .andWhere('log.priority = :hiddenPriority')
+          .andWhere('log.is_overridden = false')
+          .getQuery();
+
+        return `NOT EXISTS ${highPriorityLogSubQuery}`;
+      })
+      .setParameters({
+        reviewContentType: 'review',
+        flaggedDecision: 'flagged',
+        hiddenPriority: 'HIGH',
+      })
       .orderBy('r.createdAt', 'DESC')
       .getMany();
 
@@ -295,7 +333,26 @@ export class ReviewsService {
         .addSelect('COUNT(r.id)', 'count')
         .where('v.product = :productId', { productId })
         .andWhere('r.isActive = :isActive', { isActive: true })
-        .andWhere('r.moderationStatus NOT IN (:...hiddenStatuses)', { hiddenStatuses: ['flagged', 'rejected'] })
+        .andWhere('r.moderationStatus != :hiddenStatus', { hiddenStatus: 'rejected' })
+        .andWhere((qb) => {
+          const highPriorityLogSubQuery = qb
+            .subQuery()
+            .select('1')
+            .from('moderation_logs', 'log')
+            .where('log.content_type = :reviewContentType')
+            .andWhere('log.content_id = r.id')
+            .andWhere('log.decision = :flaggedDecision')
+            .andWhere('log.priority = :hiddenPriority')
+            .andWhere('log.is_overridden = false')
+            .getQuery();
+
+          return `NOT EXISTS ${highPriorityLogSubQuery}`;
+        })
+        .setParameters({
+          reviewContentType: 'review',
+          flaggedDecision: 'flagged',
+          hiddenPriority: 'HIGH',
+        })
         .groupBy('ROUND(r.rating)')
         .getRawMany();
 

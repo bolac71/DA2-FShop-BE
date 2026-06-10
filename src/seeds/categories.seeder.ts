@@ -1,9 +1,22 @@
 import { DataSource } from 'typeorm';
 import { Category } from '../modules/categories/entities/category.entity';
 import { DepartmentType } from '../constants/department-type.enum';
+import { SlotType } from '../modules/slot-types/entities/slot-type.entity';
 
 export async function seedCategories(dataSource: DataSource): Promise<void> {
   const categoryRepository = dataSource.getRepository(Category);
+  const slotTypeRepository = dataSource.getRepository(SlotType);
+
+  // Fetch slot types to match by code
+  const slotTypes = await slotTypeRepository.find();
+  const slotMap = new Map<string, number>();
+  for (const st of slotTypes) {
+    slotMap.set(st.code, st.id);
+  }
+
+  const getSlotId = (code: string): number | null => {
+    return slotMap.get(code) || null;
+  };
 
   const categories: any[] = [
     // Men
@@ -15,6 +28,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124161/levis_cftnvo.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('top'),
     },
     {
       name: 'Quần jeans nam',
@@ -24,6 +38,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124335/quan-jeans-nam_k34h6q.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('bottom'),
     },
     {
       name: 'Giày thể thao nam',
@@ -33,6 +48,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124390/giay-the-thao-nam_o5zaha.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('shoes'),
     },
     {
       name: 'Áo khoác nam',
@@ -42,6 +58,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124453/ao-khoac-nam_nefayr.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('top'),
     },
 
     // Women
@@ -53,6 +70,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124601/ao-thun-nu_sfadzr.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('top'),
     },
     {
       name: 'Quần jeans nữ',
@@ -62,6 +80,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124791/quan-jeans-nu_yqcvgr.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('bottom'),
     },
     {
       name: 'Giày cao gót nữ',
@@ -71,6 +90,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124830/giay-cao-got-nu_julhep.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('shoes'),
     },
     {
       name: 'Váy nữ',
@@ -80,6 +100,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773124965/vay-nu_t1t8he.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('bottom'),
     },
 
     // Kids
@@ -91,6 +112,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773125263/ao-tre-em_mkvwxn.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('top'),
     },
     {
       name: 'Quần trẻ em',
@@ -100,6 +122,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773125304/quan-tre-em_sxoqyc.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('bottom'),
     },
     {
       name: 'Giày trẻ em',
@@ -109,6 +132,7 @@ export async function seedCategories(dataSource: DataSource): Promise<void> {
       imageUrl: 'https://res.cloudinary.com/dtkbbwmg4/image/upload/v1773125347/giay-tre-em_qcjbmu.png',
       publicId: null,
       isActive: true,
+      slotTypeId: getSlotId('shoes'),
     },
   ];
 

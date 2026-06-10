@@ -26,6 +26,7 @@ import {
   QueryLivestreamDto,
   UpdateLivestreamDto,
   AddLivestreamProductsBatchDto,
+  CreatePollDto,
 } from './dtos';
 import { LivestreamsService } from './livestreams.service';
 import { LivestreamsGateway } from './livestreams.gateway';
@@ -194,5 +195,39 @@ export class LivestreamsController {
   issueAgoraToken(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
     const { sub } = req['user'];
     return this.livestreamsService.issueAgoraToken(id, sub);
+  }
+
+  @Post(':id/polls')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a live poll for this livestream' })
+  async createPoll(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreatePollDto,
+  ) {
+    const poll = await this.livestreamsService.createPoll(id, dto);
+    this.livestreamsGateway.broadcastPollCreated(id, poll);
+    return poll;
+  }
+
+  @Post(':id/polls/:pollId/close')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Close an active poll' })
+  async closePoll(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('pollId', ParseIntPipe) pollId: number,
+  ) {
+    const poll = await this.livestreamsService.closePoll(pollId);
+    this.livestreamsGateway.broadcastPollClosed(id, poll);
+    return poll;
+  }
+
+  @Get(':id/polls/active')
+  @ApiOperation({ summary: 'Get the current active poll for this livestream' })
+  getActivePoll(@Param('id', ParseIntPipe) id: number) {
+    return this.livestreamsService.getActivePoll(id);
   }
 }

@@ -13,7 +13,8 @@ import { Socket, Server } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { LivestreamsService } from './livestreams.service';
-import { CreateLivestreamCommentDto } from './dtos';
+import { CreateLivestreamCommentDto, SubmitVoteDto } from './dtos';
+import { LivestreamPoll } from './entities/livestream-poll.entity';
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class LivestreamsGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -131,11 +132,46 @@ export class LivestreamsGateway implements OnGatewayConnection, OnGatewayDisconn
     this.emitNewComment(livestreamId, comment);
   }
 
+  @SubscribeMessage('submitVote')
+  async handleSubmitVote(
+    @MessageBody() body: { pollId: number; optionIndex: number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const userId = Number(client.data.userId);
+    if (!userId) return;
+
+    const pollId = Number(body?.pollId);
+    const optionIndex = Number(body?.optionIndex);
+    if (!Number.isFinite(pollId) || pollId <= 0) return;
+    if (!Number.isFinite(optionIndex) || optionIndex < 0) return;
+
+    try {
+      const result = await this.livestreamService.submitVote(pollId, userId, optionIndex);
+      this.server
+        .to(`livestream-${result.livestreamId}`)
+        .emit('pollUpdated', result);
+    } catch (e) {
+      client.emit('pollVoteError', { message: (e as Error).message ?? 'Vote failed' });
+    }
+  }
+
   emitNewComment(livestreamId: number, comment: unknown) {
     this.server.to(`livestream-${livestreamId}`).emit('newLivestreamComment', comment);
   }
 
   emitPinnedProductsUpdated(livestreamId: number) {
     this.server.to(`livestream-${livestreamId}`).emit('pinnedProductsUpdated', { livestreamId });
+  }
+
+  broadcastPollCreated(livestreamId: number, poll: LivestreamPoll) {
+    this.server.to(`livestream-${livestreamId}`).emit('pollCreated', { poll });
+  }
+
+  broadcastPollClosed(livestreamId: number, poll: LivestreamPoll) {
+    this.server.to(`livestream-${livestreamId}`).emit('pollClosed', {
+      pollId: poll.id,
+      finalResults: poll.results,
+      totalVotes: poll.totalVotes,
+    });
   }
 }

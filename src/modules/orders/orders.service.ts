@@ -529,6 +529,29 @@ export class OrdersService {
             orderId: order.id,
           });
           await manager.save(livestreamOrder);
+        } else {
+          // Cart-based checkout: livestreamId không có ở order-level
+          // nhưng từng item có thể mang livestreamId → tạo LivestreamOrder từ đó
+          const itemLivestreamIds = [
+            ...new Set(
+              createOrderDto.items
+                .filter((i) => i.livestreamId)
+                .map((i) => i.livestreamId!),
+            ),
+          ];
+          for (const lsId of itemLivestreamIds) {
+            const alreadyLinked = await manager.findOneBy(LivestreamOrder, {
+              orderId: order.id,
+              livestreamId: lsId,
+            });
+            if (!alreadyLinked) {
+              const lo = manager.create(LivestreamOrder, {
+                livestreamId: lsId,
+                orderId: order.id,
+              });
+              await manager.save(lo);
+            }
+          }
         }
 
         return { order, orderedProductIds, user };

@@ -47,8 +47,8 @@ export class ModerationService {
     contentType: ModeratedContentType,
     contentId: number,
     userId?: number,
-  ): Promise<void> {
-    if (!text?.trim()) return;
+  ): Promise<ContentModerationStatus | null> {
+    if (!text?.trim()) return 'approved';
 
     let result: ModerationV2ApiResponse;
     try {
@@ -66,13 +66,13 @@ export class ModerationService {
 
       if (!response.ok) {
         this.logger.warn(`AI moderation returned ${response.status} for ${contentType}#${contentId}`);
-        return;
+        return null;
       }
 
       result = (await response.json()) as ModerationV2ApiResponse;
     } catch (err) {
       this.logger.warn(`AI moderation call failed for ${contentType}#${contentId}: ${(err as Error).message}`);
-      return;
+      return null;
     }
 
     const mlScore = result.ml_scores.length
@@ -84,6 +84,14 @@ export class ModerationService {
       mlLabels[l.label] = l.score;
     }
 
+    const shouldAutoReject = result.decision === 'flagged' && result.priority === 'HIGH';
+    const shouldKeepVisibleForReview = result.decision === 'flagged' && result.priority === 'NORMAL';
+    const effectiveDecision: ContentModerationStatus = shouldAutoReject
+      ? 'rejected'
+      : shouldKeepVisibleForReview
+        ? 'approved'
+        : result.decision;
+    const reviewedAt = shouldAutoReject ? new Date() : null;
     const log = this.logRepo.create({
       contentType,
       contentId,
@@ -96,6 +104,9 @@ export class ModerationService {
       priority: result.priority,
       confidence: result.confidence,
       signals: result.signals ?? {},
+      isOverridden: shouldAutoReject,
+      overrideDecision: shouldAutoReject ? 'rejected' : null,
+      reviewedAt,
     });
 
     await this.logRepo.save(log);
@@ -105,8 +116,8 @@ export class ModerationService {
       result.priority,
     );
 
-    // Update moderationStatus on the content entity
-    await this.updateContentStatus(contentType, contentId, result.decision);
+    await this.updateContentStatus(contentType, contentId, effectiveDecision);
+    return effectiveDecision;
   }
 
   private async updateContentStatus(
@@ -186,6 +197,7 @@ export class ModerationService {
       qb
         .where('log.decision = :decision', { decision: 'flagged' })
         .andWhere('log.isOverridden = false')
+        .andWhere('log.priority = :pendingPriority', { pendingPriority: 'NORMAL' })
         .orderBy('log.priority', 'DESC')
         .addOrderBy('log.createdAt', 'DESC');
     } else {
@@ -210,7 +222,7 @@ export class ModerationService {
 
     const [flagged, rejected] = await Promise.all([
       this.logRepo.find({
-        where: { decision: 'flagged', isOverridden: false },
+        where: { decision: 'flagged', isOverridden: false, priority: 'NORMAL' },
         order: { priority: 'DESC', createdAt: 'DESC' },
         take: limit,
       }),
@@ -243,7 +255,7 @@ export class ModerationService {
   async getStats() {
     const [totalFlagged, pendingReview, highPriority, rejected] = await Promise.all([
       this.logRepo.count({ where: { decision: 'flagged' } }),
-      this.logRepo.count({ where: { decision: 'flagged', isOverridden: false } }),
+      this.logRepo.count({ where: { decision: 'flagged', isOverridden: false, priority: 'NORMAL' } }),
       this.logRepo.count({ where: { decision: 'flagged', isOverridden: false, priority: 'HIGH' } }),
       this.logRepo.count({ where: { isOverridden: true, overrideDecision: 'rejected' } }),
     ]);

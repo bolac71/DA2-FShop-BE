@@ -78,6 +78,9 @@ describe('ModerationService', () => {
       decision: 'flagged',
     });
     expect(qb.andWhere).toHaveBeenCalledWith('log.isOverridden = false');
+    expect(qb.andWhere).toHaveBeenCalledWith('log.priority = :pendingPriority', {
+      pendingPriority: 'NORMAL',
+    });
     expect(qb.orderBy).toHaveBeenCalledWith('log.priority', 'DESC');
     expect(qb.addOrderBy).toHaveBeenCalledWith('log.createdAt', 'DESC');
     expect(qb.skip).toHaveBeenCalledWith(10);

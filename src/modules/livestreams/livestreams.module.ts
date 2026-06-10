@@ -6,6 +6,8 @@ import {
   LivestreamOrder,
   LivestreamProduct,
 } from './entities';
+import { LivestreamPoll } from './entities/livestream-poll.entity';
+import { LivestreamPollVote } from './entities/livestream-poll-vote.entity';
 import { LivestreamsService } from './livestreams.service';
 import { LivestreamsController } from './livestreams.controller';
 import { LivestreamsGateway } from './livestreams.gateway';
@@ -24,6 +26,8 @@ import { ModerationModule } from '../moderation/moderation.module';
       LivestreamComment,
       LivestreamProduct,
       LivestreamOrder,
+      LivestreamPoll,
+      LivestreamPollVote,
       Product,
       Order,
       User,
