@@ -19,7 +19,7 @@ export default function () {
   res = http.get(`${BASE_URL}/api/v1/products?page=1&limit=12`);
   check(res, { 'products: status 200': (r) => r.status === 200 });
 
-  res = http.get(`${BASE_URL}/api/v1/products?search=áo&page=1&limit=12`);
+  res = http.get(`${BASE_URL}/api/v1/products?search=${encodeURIComponent('áo')}&page=1&limit=12`);
   check(res, { 'search: status 200': (r) => r.status === 200 });
 
   sleep(1);
