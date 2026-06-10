@@ -330,6 +330,57 @@ export class AiService {
     }
   }
 
+  async virtualTryonOOTD(
+    personBuffer: Buffer,
+    garmentBuffer: Buffer,
+    garmentCategory: 'Upper-body' | 'Lower-body' | 'Dress',
+  ): Promise<Buffer> {
+    try {
+      const formData = new FormData();
+      formData.append('person_image', new Blob([new Uint8Array(personBuffer)]), 'person.jpg');
+      formData.append('garment_image', new Blob([new Uint8Array(garmentBuffer)]), 'garment.jpg');
+      formData.append('garment_category', garmentCategory);
+
+      this.logger.debug(`Sending OOTD try-on request: category=${garmentCategory}`);
+
+      const response = await fetch(`${this.aiServiceUrl}/tryon/ootd`, {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(180000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`AI service returned status ${response.status}: ${errorText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`OOTD try-on failed: ${errorMessage}`);
+
+      if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
+        throw new HttpException(
+          'Virtual try-on timeout. The AI model may be busy, please try again.',
+          HttpStatus.GATEWAY_TIMEOUT,
+        );
+      }
+
+      if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('fetch failed')) {
+        throw new HttpException(
+          'AI service is currently unavailable. Please try again later.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+
+      throw new HttpException(
+        `Virtual try-on failed: ${errorMessage}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
   async transcribeVoice(
     fileBuffer: Buffer,
     fileName: string,

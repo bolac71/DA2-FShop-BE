@@ -421,7 +421,7 @@ export class ProductsService {
   async findOne(id: number) {
     const product = await this.productsRepository.findOne({
       where: { id, isActive: true },
-      relations: ['brand', 'category', 'images', 'variants'],
+      relations: ['brand', 'category', 'category.slotType', 'images', 'variants'],
     });
 
     if (!product)
@@ -781,7 +781,7 @@ export class ProductsService {
 
     const product = await this.productsRepository.findOne({
       where: { id: productId, isActive: true },
-      relations: ['images', 'variants'],
+      relations: ['images', 'variants', 'category', 'category.slotType'],
     });
     if (!product) {
       throw new HttpException(`Product with id ${productId} not found`, HttpStatus.NOT_FOUND);
@@ -800,11 +800,21 @@ export class ProductsService {
     }
     const garmentBuffer = Buffer.from(await garmentResponse.arrayBuffer());
 
-    const resultBuffer = await this.aiService.virtualTryon(
-      personFile.buffer,
-      garmentBuffer,
-      garmentDesc ?? product.name,
-    );
+    const SLOT_TO_OOTD: Record<string, 'Upper-body' | 'Lower-body' | 'Dress'> = {
+      top: 'Upper-body',
+      bottom: 'Lower-body',
+      dress: 'Dress',
+    };
+    const slotCode = product.category?.slotType?.code;
+    const ootdCategory = slotCode ? SLOT_TO_OOTD[slotCode] : undefined;
+
+    let resultBuffer: Buffer;
+    if (ootdCategory) {
+      resultBuffer = await this.aiService.virtualTryonOOTD(personFile.buffer, garmentBuffer, ootdCategory);
+    } else {
+      // Fallback to IDM-VTON for products without a clothing slot type
+      resultBuffer = await this.aiService.virtualTryon(personFile.buffer, garmentBuffer, garmentDesc ?? product.name);
+    }
 
     const uploaded = await this.cloudinaryService.uploadBufferToFolder(resultBuffer, 'virtual-tryon');
     return { resultImageUrl: uploaded.secure_url };
