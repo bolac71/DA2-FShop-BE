@@ -47,7 +47,7 @@ export class NotificationsService {
     this.notiGateway.sendToUser(userId, savedNoti);
     this.logger.log(`Notification emitted: id=${savedNoti.id}, user=${userId}`);
 
-    await this.trySendOrderPush(userId, savedNoti);
+    await this.trySendPush(userId, savedNoti);
     
     return savedNoti;
   }
@@ -96,6 +96,8 @@ export class NotificationsService {
     this.logger.log(
       `Public notifications persisted: total=${totalInserted}, type=${payload.type}`,
     );
+
+    await this.sendBulkPush(payload);
 
     return totalInserted;
   }
@@ -315,11 +317,76 @@ export class NotificationsService {
     }));
   }
 
-  private async trySendOrderPush(userId: number, notification: Notification) {
-    if (notification.type !== NotificationType.ORDER) {
-      return;
+  private async sendBulkPush(payload: Omit<CreateNotificationDto, 'userId'>) {
+    let lastTokenId = 0;
+
+    while (true) {
+      const tokens = await this.deviceTokenRepository.find({
+        where: { isActive: true, id: MoreThan(lastTokenId) },
+        order: { id: 'ASC' },
+        take: NotificationsService.EXPO_PUSH_BATCH_SIZE,
+      });
+
+      if (!tokens.length) break;
+
+      const messages = tokens.map((t) => ({
+        to: t.token,
+        title: payload.title ?? 'FShop',
+        body: payload.message ?? '',
+        sound: 'default',
+        data: {
+          type: payload.type,
+          referenceId: payload.referenceId ?? null,
+        },
+      }));
+
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+        ...(process.env.EXPO_ACCESS_TOKEN && {
+          Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}`,
+        }),
+      };
+
+      try {
+        const res = await fetch(NotificationsService.EXPO_PUSH_URL, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(messages),
+        });
+
+        const parsed = await res.json().catch(() => ({ data: [] })) as { data?: Array<{ status?: string; details?: { error?: string } }> };
+        const invalidTokenStrings: string[] = [];
+
+        (parsed?.data ?? []).forEach((ticket, i) => {
+          if (
+            ticket.status === 'error' &&
+            (ticket.details?.error === 'DeviceNotRegistered' ||
+              ticket.details?.error === 'InvalidCredentials')
+          ) {
+            invalidTokenStrings.push(tokens[i].token);
+          }
+        });
+
+        if (invalidTokenStrings.length) {
+          await this.deviceTokenRepository.update(
+            { token: In(invalidTokenStrings) },
+            { isActive: false },
+          );
+          this.logger.warn(`Bulk push: deactivated ${invalidTokenStrings.length} invalid tokens`);
+        }
+      } catch (err) {
+        this.logger.error(`Bulk push batch failed`, err instanceof Error ? err.stack : undefined);
+      }
+
+      lastTokenId = tokens[tokens.length - 1].id;
     }
 
+    this.logger.log(`Bulk push sent: type=${payload.type}`);
+  }
+
+  private async trySendPush(userId: number, notification: Notification) {
     const activeTokens = await this.deviceTokenRepository.find({
       where: { user: { id: userId }, isActive: true },
       order: { updatedAt: 'DESC' },
@@ -354,6 +421,7 @@ export class NotificationsService {
         data: {
           notificationId: notification.id,
           type: notification.type,
+          referenceId: notification.referenceId ?? null,
         },
       }));
 
