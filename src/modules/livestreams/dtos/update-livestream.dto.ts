@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { BooleanOptional } from 'src/decorators/dto.decorator';
 
 export class UpdateLivestreamDto {
   @ApiProperty({ required: false })
@@ -16,4 +17,8 @@ export class UpdateLivestreamDto {
   @IsOptional()
   @IsDateString()
   scheduledStartAt?: string;
+
+  @BooleanOptional()
+  isActive?: boolean;
 }
+

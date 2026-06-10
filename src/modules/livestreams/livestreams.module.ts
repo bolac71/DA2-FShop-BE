@@ -13,6 +13,7 @@ import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Product } from '../products/entities/product.entity';
 import { Order } from '../orders/entities';
+import { User } from '../users/entities/user.entity';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { ModerationModule } from '../moderation/moderation.module';
 
@@ -25,6 +26,7 @@ import { ModerationModule } from '../moderation/moderation.module';
       LivestreamOrder,
       Product,
       Order,
+      User,
     ]),
     AuthModule,
     NotificationsModule,

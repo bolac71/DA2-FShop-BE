@@ -19,10 +19,11 @@ import {
   LivestreamOrder,
   LivestreamProduct,
 } from './entities';
-import { LivestreamStatus, NotificationType } from 'src/constants';
+import { LivestreamStatus, NotificationType, Role } from 'src/constants';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Product } from '../products/entities/product.entity';
 import { Order } from '../orders/entities';
+import { User } from '../users/entities/user.entity';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CloudinaryResponse } from '../cloudinary/dto/cloudinary-response';
 import { ModerationService } from '../moderation/moderation.service';
@@ -44,6 +45,8 @@ export class LivestreamsService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     @InjectRedis()
     private readonly redis: Redis,
     private readonly configService: ConfigService,
@@ -102,10 +105,16 @@ export class LivestreamsService {
     const livestream = await this.ensureHostAccess(livestreamId, hostId);
 
     if (livestream.status !== LivestreamStatus.SCHEDULED) {
-      throw new HttpException(
-        'Only scheduled livestream can be updated',
-        HttpStatus.BAD_REQUEST,
-      );
+      if (dto.scheduledStartAt !== undefined) {
+        const currentStartAt = new Date(livestream.scheduledStartAt).getTime();
+        const newStartAt = new Date(dto.scheduledStartAt).getTime();
+        if (currentStartAt !== newStartAt) {
+          throw new HttpException(
+            'Cannot update scheduled start time of an ongoing or ended livestream',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
     }
 
     if (dto.title !== undefined) livestream.title = dto.title;
@@ -113,6 +122,7 @@ export class LivestreamsService {
     if (dto.scheduledStartAt !== undefined) {
       livestream.scheduledStartAt = new Date(dto.scheduledStartAt);
     }
+    if (dto.isActive !== undefined) livestream.isActive = dto.isActive;
 
     let uploadedCover: CloudinaryResponse;
 
@@ -570,7 +580,13 @@ export class LivestreamsService {
     if (!livestream) {
       throw new HttpException('Livestream not found', HttpStatus.NOT_FOUND);
     }
-    if (livestream.hostId !== hostId) {
+
+    const user = await this.userRepository.findOneBy({ id: hostId });
+    if (!user) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+
+    if (user.role !== Role.ADMIN && livestream.hostId !== hostId) {
       throw new HttpException(
         'You do not have permission to manage this livestream',
         HttpStatus.FORBIDDEN,
