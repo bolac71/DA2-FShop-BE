@@ -72,4 +72,9 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
     this.logger.log(`Emit admin_notification_created: type=${payload?.type ?? 'unknown'}`);
     this.server.emit('admin_notification_created', payload);
   }
+
+  emitModerationChanged(payload: any) {
+    this.logger.log(`Emit moderation_changed: contentType=${payload?.contentType ?? 'unknown'} priority=${payload?.priority ?? 'unknown'}`);
+    this.server.emit('moderation_changed', payload);
+  }
 }

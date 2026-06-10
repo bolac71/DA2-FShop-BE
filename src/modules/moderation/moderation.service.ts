@@ -109,7 +109,7 @@ export class ModerationService {
       reviewedAt,
     });
 
-    await this.logRepo.save(log);
+    const savedLog = await this.logRepo.save(log);
     this.metricsService.recordModerationDecision(
       contentType,
       result.decision,
@@ -117,6 +117,19 @@ export class ModerationService {
     );
 
     await this.updateContentStatus(contentType, contentId, effectiveDecision);
+
+    if (result.decision === 'flagged') {
+      this.notificationsService.emitModerationChanged({
+        logId: savedLog.id,
+        contentType,
+        contentId,
+        decision: result.decision,
+        priority: result.priority,
+        queueStatus: shouldAutoReject ? 'rejected' : 'pending',
+        createdAt: savedLog.createdAt,
+      });
+    }
+
     return effectiveDecision;
   }
 

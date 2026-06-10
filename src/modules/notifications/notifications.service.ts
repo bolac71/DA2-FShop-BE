@@ -123,6 +123,18 @@ export class NotificationsService {
     return notifications.filter(Boolean);
   }
 
+  emitModerationChanged(payload: {
+    logId: number;
+    contentType: string;
+    contentId: number;
+    decision: string;
+    priority: string;
+    queueStatus: 'pending' | 'rejected';
+    createdAt: Date;
+  }) {
+    this.notiGateway.emitModerationChanged(payload);
+  }
+
   async createAdminBroadcast(payload: CreateAdminBroadcastDto, adminId: number) {
     const inserted = await this.createForAllActiveUsers(payload);
 
