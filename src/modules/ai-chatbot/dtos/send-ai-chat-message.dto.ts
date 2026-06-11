@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class SendAiChatMessageDto {
@@ -15,4 +15,12 @@ export class SendAiChatMessageDto {
   @Min(0)
   @Max(30)
   historyLimit?: number = 12;
+
+  @ApiPropertyOptional({ description: 'Product IDs the user attached to ask about', type: [Number] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @Type(() => Number)
+  @IsInt({ each: true })
+  productIds?: number[];
 }
